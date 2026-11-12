@@ -2,6 +2,11 @@
 
 Rhythm game with your MIDI controller right from your browser.
 
+**▶ Play it: [shan-sherif.github.io/muse-midi-dx](https://shan-sherif.github.io/muse-midi-dx/)** (Chrome or Edge for a
+MIDI keyboard or drum kit)
+
+[![muse-midi-dx playing Ode to Joy on piano and drums: notes falling onto the keys and drum pads. The device's screen showing the chord](docs/media/gameplay.gif)](https://shan-sherif.github.io/muse-midi-dx/)
+
 Notes fall towards a piano keyboard, a drum kit, or both, and you play them on a MIDI keyboard, an e-drum kit, the
 computer keyboard or the screen. Every press is judged PERFECT (±50 ms), GREAT (±100 ms), GOOD (±150 ms) or MISS.
 
@@ -157,6 +162,7 @@ npm run check:native                            # the sanitizer check (see Check
 | `web/worklet.js` | the firmware in an AudioWorklet: audio, the screen, held notes, timed MIDI, presets, mixer |
 | `web/songs.js` | the built-in songs and their generated beats |
 | `web/midifile.js` | `.mid` → a chart, its instruments kept apart |
+| `docs/media/gameplay.gif` | the README's recording: Ode to Joy on piano and drums, CPU mode |
 
 ## Our changes to Melodee
 
