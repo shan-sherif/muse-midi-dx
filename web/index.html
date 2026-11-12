@@ -1,0 +1,288 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only
+     muse-midi-dx: a rhythm game played on Melodee (FM-1 firmware) running in the browser as WebAssembly. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>muse-midi-dx</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=JetBrains+Mono:wght@600;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307080d'/%3E%3Crect x='6' y='6' width='5' height='14' rx='2' fill='%237cf7ff'/%3E%3Crect x='14' y='10' width='5' height='10' rx='2' fill='%23a07cff'/%3E%3Crect x='22' y='4' width='5' height='16' rx='2' fill='%237cf7ff'/%3E%3Crect x='4' y='24' width='24' height='3' rx='1.5' fill='%237cf7ff'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="top" id="top">
+  <div class="brand">muse<span>·</span>midi<span>·</span>dx</div>
+  <div class="topbar">
+    <div class="inst" role="radiogroup" aria-label="What you play">
+      <button role="radio" data-inst="keys" aria-checked="true">Keyboard</button><button role="radio" data-inst="drums" aria-checked="false">Drums</button><button role="radio" data-inst="both" aria-checked="false">Both</button>
+    </div>
+    <div class="midi-pick" id="midi-pick">
+      <label for="midiin">MIDI in</label>
+      <select id="midiin"><option value="">none</option></select>
+      <button id="routing-btn" title="Two devices (a keyboard and a drum kit)? Choose which one plays what, and see their signals">Routing</button>
+      <div class="callout" id="callout" hidden>Pick your MIDI device here</div>
+    </div>
+    <label class="theme-pick" title="The device's screen palette: the page takes its colours from it (it follows the device's own settings too)">
+      Theme <select id="theme" disabled><option value="0">LO-FI</option></select></label>
+    <span id="status" class="status"></span>
+    <button id="mixer-btn" title="The device's mixer (level, pan, sends, mute, solo, master) and its effects rack">Mixer &amp; FX</button>
+    <button id="defaults" title="Put every setting back to its default (theme, sounds, keys, speed, offset, songs' setup)">Defaults</button>
+    <button id="fullscreen" title="Full screen" aria-label="Full screen">⛶</button>
+  </div>
+</header>
+
+<main class="stage">
+  <!-- screen 1: the device -->
+  <aside class="card device-card">
+    <div class="tag">Device</div>
+    <div class="lcd-wrap">
+      <canvas id="lcd" width="240" height="240" aria-label="FM-1 screen"></canvas>
+    </div>
+    <div class="side-scroll">
+    <div class="sound">
+      <div class="tag">Sound</div>
+      <div class="snd-tabs" id="snd-tabs" role="tablist" aria-label="Which part's sound"></div>
+      <div class="now">
+        <div class="now-text"><span class="k">SOUND</span><b id="snd-name">—</b><span id="snd-meta"></span></div>
+        <div class="steppers">
+          <button id="snd-prev" aria-label="Previous sound" disabled>◀</button><button id="snd-next" aria-label="Next sound" disabled>▶</button>
+        </div>
+      </div>
+      <input id="snd-search" type="search" placeholder="Search sounds…" aria-label="Search sounds" disabled>
+      <div class="fgroup">
+        <div class="fhead" id="h-cats">Type</div>
+        <div class="filters" id="snd-cats" role="group" aria-labelledby="h-cats"></div>
+      </div>
+      <div class="fgroup">
+        <div class="fhead" id="h-engines">Engine</div>
+        <div class="filters" id="snd-engines" role="group" aria-labelledby="h-engines"></div>
+      </div>
+      <div class="snd-list" id="snd-list" role="listbox" aria-label="Sounds"><p class="empty">Switch on to load the sounds.</p></div>
+      <div class="snd-count" id="snd-count"></div>
+    </div>
+    <p class="hint">Play with a MIDI controller, the piano under the notes, or the computer keyboard
+      (<kbd>Z</kbd>–<kbd>/</kbd> from F3, <kbd>4</kbd>–<kbd>O</kbd> above).</p>
+    <details class="advanced">
+      <summary>Advanced: device controls</summary>
+      <div class="panel" id="panel">
+        <div class="knobs" id="knobs"></div>
+        <div class="buttons" id="buttons"></div>
+        <div class="keys" id="keys"></div>
+      </div>
+      <div class="row small">
+        <button id="chordview">Show chord view</button>
+        <span class="hint">Knobs: drag or scroll. Hold HOME for the menu.</span>
+      </div>
+    </details>
+    <footer class="foot">
+      muse-midi-dx is free software (GPL-3.0): <a href="https://github.com/shan-sherif/muse-midi-dx">source code</a>.
+      Sound and screen: <a href="https://github.com/keremimo/melodee">Melodee</a> <span id="mver"></span> (GPL-3.0), modified,
+      based on <a href="https://github.com/hugelton/Felucca">Felucca</a>, compiled to WebAssembly. M-VAVE and FM-1 are
+      trademarks of their respective owners; this project is not affiliated with them.
+    </footer>
+    </div>
+  </aside>
+
+  <!-- screen 2: the notes -->
+  <section class="card game-card">
+    <div class="hud">
+      <div class="info">
+        <div class="tag">Now playing</div>
+        <div class="song-title" id="h-title">—</div>
+        <div class="song-meta">
+          <span class="bpm">BPM <b id="h-bpm">—</b></span>
+          <span id="h-notes"></span>
+          <span class="level"><span class="dim">level</span> <span class="meter" id="h-level" aria-label="Level"></span></span>
+        </div>
+      </div>
+      <div class="scorebox">
+        <div class="tag">Score</div>
+        <b id="score" class="digits">0</b>
+        <div class="gauge" title="Accuracy"><span id="gauge"></span></div>
+        <div class="acc">accuracy <b id="acc">100.0%</b></div>
+      </div>
+      <div class="combobox">
+        <div class="tag">Combo</div>
+        <b id="combo" class="digits">0</b>
+        <div class="sub">best <b id="maxcombo">0</b></div>
+      </div>
+      <div class="counts"><i class="pf" id="c-pf">0</i><i class="gr" id="c-gr">0</i><i class="gd" id="c-gd">0</i><i class="ms" id="c-ms">0</i></div>
+    </div>
+    <div class="highway">
+      <canvas id="highway"></canvas>
+      <canvas id="drumway" hidden></canvas>
+      <div class="welcome" id="welcome">
+        <div class="welcome-card">
+          <h2>What will you play?</h2>
+          <div class="pick-inst" role="radiogroup" aria-label="What you play">
+            <button role="radio" data-inst="keys" aria-checked="true"><b>Keyboard</b><small>piano / MIDI keyboard</small></button>
+            <button role="radio" data-inst="drums" aria-checked="false"><b>Drums</b><small>e-drum kit or pads</small></button>
+            <button role="radio" data-inst="both" aria-checked="false"><b>Both</b><small>keyboard and drums</small></button>
+          </div>
+          <p id="welcome-text">Connect your MIDI device, then choose it in <b>MIDI in</b> at the top.
+            No device? Play with the computer keys, or click the keys and pads.</p>
+          <p class="welcome-two" id="welcome-two" hidden>Two devices (a keyboard and a drum kit)? Once switched on, open
+            <b>Routing</b> at the top to send each one to its instrument.</p>
+          <button class="primary big" id="power">OK, switch on</button>
+        </div>
+      </div>
+      <div class="setup" id="setup" hidden>
+        <div class="setup-card">
+          <div class="setup-head">
+            <div class="grow"><div class="tag">Song setup</div><div class="setup-title" id="su-title"></div></div>
+            <button class="primary" id="su-done">Done</button>
+          </div>
+          <div class="fhead">Section <span class="su-range" id="su-range"></span></div>
+          <div class="roll-wrap"><canvas id="su-roll" aria-label="The whole song: drag the handles to choose where it starts and ends"></canvas></div>
+          <div class="row small su-row">
+            <button id="su-whole">Whole song</button>
+            <span class="dim">Drag the start and end handles (or click near one). They snap to beats.</span>
+          </div>
+          <details class="su-adv" id="su-adv">
+            <summary>Advanced: who plays what</summary>
+            <p class="dim small">You play <b>You · keys</b> and <b>You · drums</b> (as Keyboard / Drums / Both at the top says;
+              the one you are not playing, the device plays). Instruments 1–4 are played by the device along with you (MIDI channels 3–6);
+              the rest are left out. ▶ plays an instrument alone from the section's start.</p>
+            <div class="su-table-wrap">
+              <table class="su-table">
+                <thead><tr><th></th><th>Instrument</th><th>Ch</th><th>Notes</th><th>Range</th><th>Part</th></tr></thead>
+                <tbody id="su-parts"></tbody>
+              </table>
+            </div>
+            <div class="su-sounds" id="su-sounds"></div>
+          </details>
+        </div>
+      </div>
+      <div class="results" id="results" hidden>
+        <div class="r-card">
+          <div class="r-left">
+            <div class="grade" id="r-grade">S</div>
+            <div class="r-badge" id="r-badge" hidden>Full combo</div>
+            <div class="r-title" id="r-title"></div>
+            <div class="r-sub" id="r-sub"></div>
+          </div>
+          <table class="r-table" aria-label="Results">
+            <tbody id="r-rows"></tbody>
+            <tfoot id="r-totals"></tfoot>
+          </table>
+        </div>
+        <div class="r-actions">
+          <button class="primary" id="again">Play again</button>
+          <button id="freeplay">Free play</button>
+        </div>
+      </div>
+    </div>
+    <div class="controls">
+      <section class="ctl-box song-box" aria-labelledby="h-song">
+        <div class="tag" id="h-song">Song</div>
+        <div class="row">
+          <label class="grow"><span class="sr">Song</span><select id="song" aria-label="Song"></select></label>
+          <label class="file">Load .mid<input type="file" id="midfile" accept=".mid,.midi,audio/midi"></label>
+          <button id="setup-btn" title="Choose a section of the song, and who plays what">Setup</button>
+        </div>
+        <div class="row small">
+          <span class="octave transpose-song" role="group" aria-label="Song transpose" title="Play the song lower or higher (semitones; « » a whole octave)">
+            <span class="dim">Transpose</span>
+            <button id="st-oct-down" aria-label="Song down an octave">«</button><button id="st-down" aria-label="Song down a semitone">−</button><output id="st-v">0</output><button id="st-up" aria-label="Song up a semitone">+</button><button id="st-oct-up" aria-label="Song up an octave">»</button>
+          </span>
+          <label title="How fast the notes fall: x1, 4 s from the top to the hit line; x16, a quarter of a second">Speed
+            <input type="range" id="speed" min="0" max="26" step="1" value="12"> <output id="speed-v" class="speed-v">x4</output></label>
+        </div>
+        <div class="row small">
+          <label><input type="checkbox" id="metro"> Metronome</label>
+          <label>Offset <input type="range" id="offset" min="-150" max="150" step="5" value="0"> <output id="offset-v">0 ms</output></label>
+        </div>
+      </section>
+
+      <section class="ctl-box piano-box" id="keys-row" aria-labelledby="h-piano">
+        <div class="tag" id="h-piano">Piano</div>
+        <div class="row small">
+          <label>Keys <select id="keysize">
+            <option value="25">25 keys</option><option value="37">37 keys</option><option value="49" selected>49 keys</option>
+            <option value="61">61 keys</option><option value="73">73 keys</option>
+          </select></label>
+          <label title="Your notes outside these keys. Auto-play: the device plays them, not scored. Fold in: moved by octaves onto your keys (one press plays two notes that land on the same key). Score them: as they are, out of reach.">Outside
+            <select id="outside"><option value="auto">Auto-play</option><option value="fold">Fold in</option><option value="score">Score them</option></select></label>
+          <span class="octave" role="group" aria-label="Octave shift" title="Move the keyboard on screen (and your MIDI keyboard, below) by octaves">
+            <button id="oct-down" aria-label="Octave down">◀</button><output id="range">C3–C6</output><button id="oct-up" aria-label="Octave up">▶</button>
+          </span>
+        </div>
+        <div class="row small">
+          <label title="◀ ▶ also transpose your MIDI keyboard, so its keys hit the notes on screen. Leave your controller's own octave buttons at their default.">
+            <input type="checkbox" id="transpose" checked> Move my MIDI keyboard too</label>
+          <output id="transpose-v" class="dim"></output>
+          <label><input type="checkbox" id="letters" checked> Key letters</label>
+        </div>
+        <div class="row small range-row"><span id="range-warn" class="warn-text" hidden></span><span id="range-ok" class="dim">Every note of the song fits these keys.</span></div>
+      </section>
+
+      <section class="ctl-box drums-box" id="drums-box" aria-labelledby="h-drums" hidden>
+        <div class="tag" id="h-drums">Drums</div>
+        <div class="row small">
+          <label title="How wide the drum screen is (Drums only: eight lanes need less room than a keyboard)">Screen width
+            <input type="range" id="drum-w" min="30" max="100" step="5" value="55"> <output id="drum-w-v">55%</output></label>
+        </div>
+        <div class="row small dim">Pads: <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> <kbd>;</kbd>
+          or tap them; an e-drum kit through MIDI in.</div>
+      </section>
+
+      <div class="transport">
+        <div class="mode" role="radiogroup" aria-label="Who plays" title="CPU: the song plays itself. User: you play it. Switch any time, even mid-song.">
+          <button role="radio" id="mode-cpu" aria-checked="true">CPU</button><button role="radio" id="mode-user" aria-checked="false">User</button>
+        </div>
+        <button id="play" class="primary big" disabled>Play</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+
+
+<div class="routing mixer" id="mixer" hidden>
+  <div class="routing-card mixer-card" role="dialog" aria-labelledby="mx-title">
+    <div class="setup-head">
+      <div class="grow"><div class="tag">Mixer &amp; effects</div><div class="setup-title" id="mx-title">The device's mix</div></div>
+      <button id="mx-reset" title="Back to the device's power-on mix">Reset mix</button>
+      <button class="primary" id="mx-done">Done</button>
+    </div>
+    <div class="mx-strips" id="mx-strips"></div>
+    <div class="mx-rack-head">
+      <div class="fhead">Effects rack <span class="dim">· shared: each part sends to it</span></div>
+      <div class="mode" id="mx-mode" role="radiogroup" aria-label="Rack mode" title="Chain: the four slots in a row, one send. Split: a send to each slot">
+        <button role="radio" data-mode="0">Chain</button><button role="radio" data-mode="1">Split</button>
+      </div>
+      <label class="mx-return">Return <input type="range" id="mx-return" min="0" max="127"> <output id="mx-return-v"></output></label>
+    </div>
+    <div class="mx-rack" id="mx-rack"></div>
+  </div>
+</div>
+
+<div class="routing" id="routing" hidden>
+  <div class="routing-card" role="dialog" aria-labelledby="rt-title">
+    <div class="setup-head">
+      <div class="grow"><div class="tag">MIDI routing</div><div class="setup-title" id="rt-title">Which device plays what</div></div>
+      <button class="primary" id="rt-done">Done</button>
+    </div>
+    <p class="dim small">Press a key or hit a pad: its device lights up below and shows what it sent. Then choose what each
+      device plays. <b>Split</b> is for one device that sends both (drums on MIDI channel 10, the rest the keyboard).</p>
+    <div class="su-table-wrap">
+      <table class="su-table rt-table">
+        <thead><tr><th>Device</th><th>Signal</th><th>Plays</th></tr></thead>
+        <tbody id="rt-rows"></tbody>
+      </table>
+    </div>
+    <p class="dim small" id="rt-note"></p>
+  </div>
+</div>
+
+<svg class="pointer" id="pointer" aria-hidden="true" hidden>
+  <defs><marker id="arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+  <path id="pointer-path" marker-end="url(#arrowhead)"/>
+</svg>
+<script type="module" src="app.js"></script>
+</body>
+</html>

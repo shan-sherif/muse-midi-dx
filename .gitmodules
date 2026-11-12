@@ -1,0 +1,3 @@
+[submodule "vendor/melodee"]
+	path = vendor/melodee
+	url = https://github.com/keremimo/melodee.git

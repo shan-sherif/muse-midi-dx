@@ -1,0 +1,374 @@
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/core.h melodee/firmware/src/core.h
+--- a/firmware/src/core.h	2026-11-11 11:12:03
++++ b/firmware/src/core.h	2026-11-11 14:51:49
+@@ -16,9 +16,11 @@
+ /* ------------------------------------------------------------ sizes --- */
+ #define NVOICE 16                /* voice slots per part (FM6 plays Dexed's 16) */
+ #define NPOLY 8                  /* the voices of an engine without its own cap (its per-voice state: engines.c eng_state) */
+-#define NPART 4                  /* synth parts: tracks 1..4 */
++#define NPART 6                  /* synth parts: tracks 1..6 (muse-midi-dx: 6; the FM-1 had 4) */
++#define NVIEW 4u                 /* muse-midi-dx: the tracks a screen shows at once (the FM-1's layout: four rows, four
++                                  * knobs, four mute keys); the screens page through 1..4, 5..8 */
+ #ifndef VBUDGET
+-#define VBUDGET (MELODEE_RAM_AUDIO ? 18u : 16u) /* shared weighted voices; RAM profile uses 18 with CPU1 online
++#define VBUDGET (MELODEE_RAM_AUDIO ? 18u : 48u)   /* (muse-midi-dx, in the browser: 48 for six parts) */ /* shared weighted voices; RAM profile uses 18 with CPU1 online
+                                                  * at 360 MHz (voice.c voice_budget: scaled with a kept 320) */
+ #endif
+ #ifndef MELODEE_ADMISSION
+@@ -29,7 +31,7 @@
+ #define MELODEE_AUDIO_BENCH 0 /* laboratory fixed-voice admission bypass; never a release default */
+ #endif
+ #ifndef NMIDI
+-#define NMIDI 4                  /* MIDI-only tracks: tracks 5..8, the MIDI Track engine and no audio */
++#define NMIDI 2                  /* MIDI-only tracks: tracks 7..8 (muse-midi-dx: NTRK stays 8) */
+ #endif
+ #define NTRK (NPART + NMIDI)     /* tracks: the parts, then the MIDI-only ones (a project's first NPART on its FUN wire) */
+ /* Shared with engine-buffer placement: the queued recorder needs one runtime
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/engines.c melodee/firmware/src/engines.c
+--- a/firmware/src/engines.c	2026-11-11 11:12:03
++++ b/firmware/src/engines.c	2026-11-11 14:52:11
+@@ -231,7 +231,8 @@
+ /* the parts at power-on and in a new song (engine, preset; the steps empty): poly, bass, lead, drums. IT'S A
+  * PROPHET 5, FM6 SOLID BASS, CZ-1 SYNTH.LEAD 1, 808 KIT (until 2026-10-16: PROPHET FUNK BASS II, FM6 PAD, SID INIT
+  * SID, 808 KIT) */
+-static const uint8_t TRK_DEF[NPART][2] = {{ENGI_PROPHET, 1}, {ENGI_FM6, 10}, {ENGI_CZ, 52}, {ENGI_DRUM, 0}};
++/* muse-midi-dx: six parts, the keys on 1 and the drums on 2 (MIDI channels 1 and 2), then bass, lead, a poly synth and strings */
++static const uint8_t TRK_DEF[NPART][2] = {{ENGI_CZ, 25}, {ENGI_DRUM, 0}, {ENGI_FM6, 10}, {ENGI_CZ, 52}, {ENGI_PROPHET, 1}, {ENGI_FM6, 15}};
+ /* track k's power-on engine and preset: TRK_DEF's, a MIDI-only track the MIDI Track's */
+ static uint32_t trk_def_engine(uint32_t k) { return k < NPART ? TRK_DEF[k][0] : ENGI_MIDI; }
+ static uint32_t trk_def_preset(uint32_t k) { return k < NPART ? TRK_DEF[k][1] : 0u; }
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/icons.c melodee/firmware/src/icons.c
+--- a/firmware/src/icons.c	2026-11-11 11:12:03
++++ b/firmware/src/icons.c	2026-11-11 14:51:49
+@@ -12,7 +12,7 @@
+ #define ICON_CELL 12
+ 
+ /* the circled numeral of track k (filled: the selected one), 12 or 16 px: tracks have no colours */
+-static uint32_t trk_icon(uint32_t k, int filled) { return (filled ? ICON_X_TRK1 : ICON_X_TRK1_O) + k % NPART; }
++static uint32_t trk_icon(uint32_t k, int filled) { return (filled ? ICON_X_TRK1 : ICON_X_TRK1_O) + k % NVIEW; }   /* (muse-midi-dx: numerals 1..4, as tracks 5..8 always wrapped) */
+ 
+ /* icon id at size 12, 16 or 24 px (24: the header battery and USB; one missing: its 12 px cell),
+  * fg on bg; returns its width */
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/params.c melodee/firmware/src/params.c
+--- a/firmware/src/params.c	2026-11-11 11:12:03
++++ b/firmware/src/params.c	2026-11-11 14:51:49
+@@ -316,7 +316,7 @@
+     [G_MFX3CHAR] = PD("CHAR", F_PCT, 0, 127, 64),
+     [G_FXRETURN] = PD("RETURN", F_PCT, 0, 127, 100),
+     [G_FXMODE] = {"MODE", F_ENUM, 0, 1, 0, (const char *const []){"CHAIN", "SPLIT"}, 0},
+-    [G_BUDGET] = {"BUDGET", F_INT, 8, 32, VOICE_BUDGET_DEFAULT, 0, "pts"},
++    [G_BUDGET] = {"BUDGET", F_INT, 8, 96, VOICE_BUDGET_DEFAULT, 0, "pts"},
+     [G_MFXTONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
+     [G_MFX2TONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
+     [G_MFX3TONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/project.c melodee/firmware/src/project.c
+--- a/firmware/src/project.c	2026-11-11 11:12:03
++++ b/firmware/src/project.c	2026-11-11 14:51:49
+@@ -15,7 +15,7 @@
+  *
+  * Built on the Mac too (tests/project_test.c, -DPROJ_HOST): the part above the #ifndef
+  * PROJ_HOST needs core.h, params.c (TP) and engines.c. */
+-#define PROJ_TRK NPART                         /* the tracks a FUN record (and a template) holds: the parts; an FBKL
++#define PROJ_TRK 4u   /* muse-midi-dx: the saved format keeps the FM-1's four parts (NPART is 6; nothing is saved in the browser). Was NPART: the tracks a FUN record (and a template) holds: the parts; an FBKL
+                                                 * record's tail holds the MIDI-only ones (pattern_store.c) */
+ #define PROJ_MAGIC 0x46554E49u                 /* FUN22: one TONE per FX slot; FUN21 and earlier convert */
+ #define PROJ_CUT_MAGIC 0x46554E48u             /* FUN21: a low and a high cut per FX slot, read as TONE */
+@@ -148,8 +148,9 @@
+                                                 * import of before 1.0) */
+ #define PROJ_DEF_KEEP 0xFEu                    /* .. the 808 DRUM sound, steps and the rest kept (old drums) */
+ #if !defined(FM1_IRQ_TARGET)
+-project_store_t proj_slot[4];                 /* host-only cache; hardware reads complete projects from NOR */
+-static uint8_t proj_bank_slot[4][PROJ_BANK_BYTES];
++/* muse-midi-dx: a host cache for every slot (were [4] while PROJ_SLOTS became 32: slot 5+ read and wrote past them) */
++project_store_t proj_slot[PROJ_SLOTS];        /* host-only cache; hardware reads complete projects from NOR */
++static uint8_t proj_bank_slot[PROJ_SLOTS][PROJ_BANK_BYTES];
+ #endif
+ static struct { uint8_t used, old; char name[PROJ_NAME_LEN + 1u]; } proj_meta[PROJ_SLOTS]   /* old: a record this firmware
+                                                      * does not read (written before 1.0): shown, kept, never overwritten unasked */
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/resources.c melodee/firmware/src/resources.c
+--- a/firmware/src/resources.c	2026-11-11 11:12:03
++++ b/firmware/src/resources.c	2026-11-11 14:51:49
+@@ -32,14 +32,14 @@
+ #endif
+ #define RESOURCE_MAIN_CAPACITY ((uint32_t)((uintptr_t)_resource_end - (uintptr_t)_resource_start))
+ #else
+-static uint32_t resource_host[40960];
++static uint32_t resource_host[163840];   /* (muse-midi-dx: x4, six parts) */
+ static uint32_t resource_host_low[5120], resource_host_data[512], resource_host_retained[1024];
+ static uint32_t resource_host_cache[7168], resource_host_cache_enabled;
+ #define RESOURCE_CACHE_AVAILABLE resource_host_cache_enabled
+ #define _resource_cache_start ((uint8_t *)resource_host_cache)
+ #define _resource_cache_end ((uint8_t *)(resource_host_cache + 7168))
+ #define _resource_start ((uint8_t *)resource_host)
+-#define _resource_end ((uint8_t *)(resource_host + 40960))
++#define _resource_end ((uint8_t *)(resource_host + 163840))
+ #define _resource_low_start ((uint8_t *)resource_host_low)
+ #define _resource_low_end ((uint8_t *)(resource_host_low + 5120))
+ #define _resource_data_start ((uint8_t *)resource_host_data)
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/seq.c melodee/firmware/src/seq.c
+--- a/firmware/src/seq.c	2026-11-11 11:12:03
++++ b/firmware/src/seq.c	2026-11-11 14:51:49
+@@ -1282,8 +1282,8 @@
+ static track_t *midi_track(uint32_t ch)
+ {
+     uint32_t k, route = (uint32_t)song.g[G_ROUTE];
+-    uint32_t first = route > 1u ? (route - 1u) * 4u : 0u;
+-    if (route != 1u && (ch < first || ch - first >= 4u))
++    uint32_t first = route > 1u ? (route - 1u) * 4u : 0u, span = route ? 4u : NPART;   /* (CH1-n: every part) */
++    if (route != 1u && (ch < first || ch - first >= span))
+         return 0;
+     if (settings_drumch && ch + 1u == settings_drumch) {
+         for (k = 0; k < trk_n(); k++)
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/settings_persist.c melodee/firmware/src/settings_persist.c
+--- a/firmware/src/settings_persist.c	2026-11-11 11:12:03
++++ b/firmware/src/settings_persist.c	2026-11-11 14:51:49
+@@ -75,7 +75,7 @@
+ {
+     if (n != (int)sizeof *p || p->magic != PERSIST_MAGIC) return 0;
+     uint32_t work=p->ext.usb_off,points=(work>>8)&255u;
+-    settings_budget=(int16_t)(((work&0xffff0000u)==WORK_BUDGET_TAG && points>=8u && points<=32u)?points:VOICE_BUDGET_DEFAULT);
++    settings_budget=(int16_t)(((work&0xffff0000u)==WORK_BUDGET_TAG && points>=8u && points<=96u)?points:VOICE_BUDGET_DEFAULT);
+     uint32_t mode = work <= 3u || (work & 0xFFFF00FCu) == WORK_BUDGET_TAG ? work & 3u : 0u;
+     p->ext.usb_off=mode|(settings_budget!=VOICE_BUDGET_DEFAULT?WORK_BUDGET_TAG|((uint32_t)settings_budget<<8):0u);
+     if (p->ext.boot > PROJ_SLOTS)
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/ui.c melodee/firmware/src/ui.c
+--- a/firmware/src/ui.c	2026-11-11 11:12:03
++++ b/firmware/src/ui.c	2026-11-11 14:51:49
+@@ -115,11 +115,12 @@
+ #define TRACKS_HIDE 32u
+ /* the four tracks Stage, MIXER, PATTERNS and SONG show: the selected one's (1..4, or the MIDI-only
+  * 5..8); a row k of them is track trk_group() + k */
+-static uint32_t trk_group(void) { return song.sel / NPART * NPART; }
++static uint32_t trk_group(void) { return song.sel / NVIEW * NVIEW; }
+ static uint32_t stage_rows(void)
+ {
+     uint32_t g = trk_group(), n = trk_n() > g ? trk_n() - g : 0u;
+-    return GLO_SELECT & TRACKS_HIDE ? (n < NPART ? n : NPART) : NPART;
++    uint32_t r = GLO_SELECT & TRACKS_HIDE ? (n < NVIEW ? n : NVIEW) : NVIEW;
++    return r < 2u ? r : 2u;                      /* muse-midi-dx: Stage shows parts 1 and 2 (keys, drums), the played ones */
+ }
+ 
+ static uint8_t sync_reload;                  /* engine / preset / project / user preset loaded: editor RELOAD push */
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/ui_layer.c melodee/firmware/src/ui_layer.c
+--- a/firmware/src/ui_layer.c	2026-11-11 11:12:03
++++ b/firmware/src/ui_layer.c	2026-11-11 14:51:49
+@@ -227,7 +227,7 @@
+         if (key_black(k)) {
+             if (g + p < trk_n())
+                 trk[g + p].p[P_MUTE] = (int16_t)!trk[g + p].p[P_MUTE];
+-        } else if (p < NPART) {
++        } else if (p < NVIEW) {
+             if (g + p < trk_n())                        /* (a track not in use: nothing) */
+                 lys.solo |= 1u << k;                    /* (layer_masks: track_solo while held) */
+         } else if (p == 4u) {
+@@ -305,8 +305,8 @@
+     if (mine & 1u) {                                    /* OCT-: back to when it opened */
+         if (lys.l == LAYER_GLO) {
+             for (k = 0; k < 4u; k++) {                  /* (the four of the track selected when it opened) */
+-                trk[lys.trk / NPART * NPART + k].p[P_MUTE] = lys.v[k];
+-                trk[lys.trk / NPART * NPART + k].p[P_LEVEL] = lys.v[4u + k];
++                trk[lys.trk / NVIEW * NVIEW + k].p[P_MUTE] = lys.v[k];
++                trk[lys.trk / NVIEW * NVIEW + k].p[P_LEVEL] = lys.v[4u + k];
+             }
+             song.g[G_BPM] = lys.v[8];
+             ui_message("MIX PUT BACK");
+@@ -336,7 +336,7 @@
+         if (l == LAYER_GLO) {
+             uint32_t t = trk_group() + p;
+             on = b ? t < trk_n() && glo_sounding(t) :
+-                 p < NPART ? t < trk_n() && (((lys.solo >> k) & 1u) | blink) : p == 4u ? blink :
++                 p < NVIEW ? t < trk_n() && (((lys.solo >> k) & 1u) | blink) : p == 4u ? blink :
+                  p == 7u && !song.g[G_CLOCK] && blink;
+         } else if (l == LAYER_SCL) {                    /* the root lit, the scale's notes blink */
+             e = (k + 5u + 12u - root) % 12u;
+@@ -395,22 +395,22 @@
+ static void layer_glo_keys(int32_t h)
+ {
+     static const char *const WL[8] = {"Solo", "Solo", "Solo", "Solo", "Mute", "", "", "Tap"};
+-    static const uint8_t BX[NPART] = {0, 1, 2, 4};      /* black key t: between white BX and BX + 1 (F# G# A# C#) */
++    static const uint8_t BX[NVIEW] = {0, 1, 2, 4};      /* black key t: between white BX and BX + 1 (F# G# A# C#) */
+     const int32_t kw = 28, x0 = 1, wy = 50, by = 6, bh = 40;
+     uint32_t i, g = trk_group();
+     for (i = 0; i < 8u; i++) {                          /* the white keys: the solos' numerals, All (unmute), Tap */
+         int32_t x = x0 + (int32_t)i * (kw + 1);
+-        int on = i < NPART && ((track_solo >> (g + i)) & 1u), none = !WL[i][0] || (i < NPART && g + i >= trk_n()),
++        int on = i < NVIEW && ((track_solo >> (g + i)) & 1u), none = !WL[i][0] || (i < NVIEW && g + i >= trk_n()),
+             dim = i == 7u && song.g[G_CLOCK];
+         uint16_t f = on ? T_TRK(i) : none ? ux_mix(T_PANEL, T_SURF, 50) : T_SURF, ink = on ? T_INK : dim ? T_DIM :
+-                     i < NPART ? T_TRK(i) : T_TEXT;
++                     i < NVIEW ? T_TRK(i) : T_TEXT;
+         char d[2] = {(char)('1' + g + i), 0};
+         cv_rrect(x, wy, kw, h - wy - 6, 4, f, T_PANEL);
+         if (!none)
+-            cv_text_c(x + kw / 2, ty_y(h - 26, i < NPART ? TY_TX : TY_LB), i < NPART ? TY_TX : TY_LB,
+-                      i < NPART ? d : i == 4u ? "All" : "Tap", ink, f);
++            cv_text_c(x + kw / 2, ty_y(h - 26, i < NVIEW ? TY_TX : TY_LB), i < NVIEW ? TY_TX : TY_LB,
++                      i < NVIEW ? d : i == 4u ? "All" : "Tap", ink, f);
+     }
+-    for (i = 0; i < NPART; i++) {                       /* the black keys: the mutes (muted: red) */
++    for (i = 0; i < NVIEW; i++) {                       /* the black keys: the mutes (muted: red) */
+         int32_t x = x0 + (int32_t)(BX[i] + 1u) * (kw + 1) - 14;
+         int m = trk[g + i].p[P_MUTE] != 0;
+         uint16_t f = m ? T_REC : T_LIFT;
+@@ -431,7 +431,7 @@
+     const char *unit;
+     uint32_t c;
+     if (l == LAYER_GLO) {                 /* T1..T4 LEVEL (the track's icon; muted: dim); T5..T8 their channel */
+-        for (c = 0; c < NPART; c++) {
++        for (c = 0; c < NVIEW; c++) {
+             uint32_t t = trk_group() + c;
+             if (t >= trk_n()) {                         /* (a track not in use: an empty card) */
+                 draw_column(c, "", "", "", T_THEME, -1, ICON_NONE);
+@@ -691,7 +691,7 @@
+         if (ui.force)
+             lcd_fill(0, H_HEAD, 240, 240 - H_HEAD, T_BG);
+         col_style = CS_CARD;
+-        for (c = 0; c < NPART; c++)
++        for (c = 0; c < NVIEW; c++)
+             card_tc[c] = T_TRK(c);
+         layer_cards(l);
+         memset(card_tc, 0, sizeof card_tc);
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/ui_pages.c melodee/firmware/src/ui_pages.c
+--- a/firmware/src/ui_pages.c	2026-11-11 11:12:03
++++ b/firmware/src/ui_pages.c	2026-11-11 14:51:49
+@@ -828,14 +828,14 @@
+     uint16_t bg = ux_mix(T_BG, c, k == song.sel ? 24 : 11);
+     cv_begin(PV_MIX_BAR_W, 3, bg);
+     pv_meter_draw(k, 0, 0, c, bg);
+-    cv_blit((uint32_t)(BOX_X + PV_MIX_BAR_X), (uint32_t)(st_row_y(k % NPART) + pv_mix_y(h) + TY_TX->cap + 8 + 7));
++    cv_blit((uint32_t)(BOX_X + PV_MIX_BAR_X), (uint32_t)(st_row_y(k % NVIEW) + pv_mix_y(h) + TY_TX->cap + 8 + 7));
+ }
+ static void pv_strip(uint32_t k)
+ {
+     track_t *t = &trk[k];
+     uint32_t sel = k == song.sel, mute = t->p[P_MUTE] != 0, arm = (song.rec >> k) & 1u, lvl = trk_level(k), sig;
+     uint32_t hot = sel && ui.hot_t ? ui.hot_col + 1u : 0u;   /* 1 LEVEL, 2 PAN, 3 unused, 4 MUTE */
+-    int32_t pk = t->peak, m, pan = clamp(t->p[P_PAN], -64, 63), h = st_row_h(), y = st_row_y(k % NPART), top;
++    int32_t pk = t->peak, m, pan = clamp(t->p[P_PAN], -64, 63), h = st_row_h(), y = st_row_y(k % NVIEW), top;
+     uint16_t tc = mute ? T_DIM : T_TRK(k), bg = ux_mix(T_BG, mute ? T_TRK(k) : tc, sel ? 24 : 11);
+     const aafont_t *tf = TY_TX, *lf = TY_LB;
+     int32_t T = pv_mix_y(h), ly = T + tf->cap + 8, cs = h >= 80 ? 34 : 26;
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/ui_patterns.c melodee/firmware/src/ui_patterns.c
+--- a/firmware/src/ui_patterns.c	2026-11-11 11:12:03
++++ b/firmware/src/ui_patterns.c	2026-11-11 14:51:49
+@@ -26,7 +26,7 @@
+ static void ptc_row(uint32_t k);
+ /* the track whose four rows the page shows: the selected one's (Copy to: the four of the track it goes to) */
+ static uint32_t pt_track(void) { return ptc_on() ? ui.ptc_to % NTRK : song.sel % NTRK; }
+-static uint32_t pt_group(void) { return pt_track() / NPART * NPART; }
++static uint32_t pt_group(void) { return pt_track() / NVIEW * NVIEW; }
+ 
+ /* ------------------------------------------------------------ shared --- */
+ /* pattern b of track k holds something: a note, a hit, a recorded note's step */
+@@ -173,7 +173,7 @@
+     uint16_t tc = t->p[P_MUTE] ? T_DIM : T_TRK(k);
+     uint32_t b, on = t->pattern / PT_COLS == pg, prog = on ? pt_prog(t) : 0u, sel = k == song.sel, h;
+     uint32_t off = !on || (t->pattern_next < NPAT && t->pattern_next / PT_COLS != pg);   /* (on the other page) */
+-    int32_t y0 = PT_ROW_Y + (int32_t)(k % NPART) * PT_ROW_H;
++    int32_t y0 = PT_ROW_Y + (int32_t)(k % NVIEW) * PT_ROW_H;
+     char n[2] = {(char)('1' + k), 0};
+     h = fnv1(fnv1(fnv1(2166136261u, steps_hash(t)), t->pattern_gen), t->pattern + 16u * t->pattern_next + 8192u * sel +
+             16384u * (uint32_t)(t->p[P_MUTE] != 0) + 65536u * (uint32_t)t->p[P_SLEN]);
+@@ -272,11 +272,11 @@
+     uint32_t k, pg = pt_page();
+     pt_numbers(pg);
+     pt_song();
+-    uint32_t g = pt_group(), n = trk_n() - g < NPART ? trk_n() - g : NPART;    /* (the selected track's four) */
++    uint32_t g = pt_group(), n = trk_n() - g < NVIEW ? trk_n() - g : NVIEW;    /* (the selected track's four) */
+     for (k = 0; k < n; k++)
+         pt_row(g + k, pg);
+-    if (ui.force && n < NPART)                          /* (the rows of tracks not in use: empty) */
+-        lcd_fill(0, PT_ROW_Y + (int32_t)n * PT_ROW_H, 240, (NPART - n) * PT_ROW_H, T_BG);
++    if (ui.force && n < NVIEW)                          /* (the rows of tracks not in use: empty) */
++        lcd_fill(0, PT_ROW_Y + (int32_t)n * PT_ROW_H, 240, (NVIEW - n) * PT_ROW_H, T_BG);
+ }
+ /* a pattern queued on any track (PATTERNS' OCT- clears them before it leaves) */
+ static int patterns_queued(void)
+@@ -292,7 +292,7 @@
+ static void patgrid_edit(uint32_t k, int32_t steps)
+ {
+     track_t *t;
+-    k = pt_group() + k % NPART;                         /* (KNOB k: the four shown) */
++    k = pt_group() + k % NVIEW;                         /* (KNOB k: the four shown) */
+     t = &trk[k];
+     if (k >= trk_n())                                   /* (no track there) */
+         return;
+@@ -596,7 +596,7 @@
+     }
+     if (sg.px >= 0)
+         cv_rect(sg.px, 0, 2, SG_ROW_H, T_TEXT);
+-    cv_blit(0, (uint32_t)(SG_ROW_Y + (int32_t)(k % NPART) * SG_ROW_H));
++    cv_blit(0, (uint32_t)(SG_ROW_Y + (int32_t)(k % NVIEW) * SG_ROW_H));
+ }
+ static void sg_foot(void)                               /* the sections and bars, the row's letter x repeats, how far */
+ {
+@@ -638,6 +638,6 @@
+     sg_head();
+     sg_foot();
+     sg_labels();
+-    for (k = trk_group(); k < trk_group() + NPART; k++)   /* (the selected track's four) */
++    for (k = trk_group(); k < trk_group() + NVIEW; k++)   /* (the selected track's four) */
+         sg_row(k);
+ }
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/ui_stage.c melodee/firmware/src/ui_stage.c
+--- a/firmware/src/ui_stage.c	2026-11-11 11:12:03
++++ b/firmware/src/ui_stage.c	2026-11-11 14:51:49
+@@ -451,7 +451,7 @@
+     uint32_t next = t->pattern_next < NPAT ? t->pattern_next + 1u : 0u, sig, src, kk, cat, g;
+     uint32_t n = stage_rows(), wide = n == 1u, idle = wide && stage_seq_idle(k);
+     int pending = sel && browse_pending();
+-    int32_t h = st_row_h(), y = st_row_y(k % NPART), top, cs = h >= 80 ? 34 : 26, tx = 6 + cs + 10, room = BOX_W - 6 - tx;
++    int32_t h = st_row_h(), y = st_row_y(k % NVIEW), top, cs = h >= 80 ? 34 : 26, tx = 6 + cs + 10, room = BOX_W - 6 - tx;
+     st_lay_t lay = {4, 4, 1, 1, ST_PMIN, 0, 0};
+     int32_t steps_row = h >= 80, showrole = 1;          /* (one, two tracks: the role under the name; three, four: beside it,
+                                                          * at the right) */
+@@ -606,7 +606,7 @@
+  * and MIXER: *drawn their row's signature */
+ static void stage_free(uint32_t k, uint32_t *drawn)
+ {
+-    int32_t h = st_row_h(), y = st_row_y(k % NPART), cs = h >= 80 ? 34 : 26, tx = 6 + cs + 10, top;
++    int32_t h = st_row_h(), y = st_row_y(k % NVIEW), cs = h >= 80 ? 34 : 26, tx = 6 + cs + 10, top;
+     const aafont_t *nf = h >= 80 ? TY_VL : TY_TX;
+     uint16_t bg = ux_mix(T_BG, T_DIM, 8), nc = ux_mix(T_BG, T_DIM, 28);
+     char d[2] = {(char)('1' + k), 0};
+diff -ruN --exclude=build ../vendor/melodee/firmware/src/ui_view.c melodee/firmware/src/ui_view.c
+--- a/firmware/src/ui_view.c	2026-11-11 11:12:03
++++ b/firmware/src/ui_view.c	2026-11-11 14:51:49
+@@ -22,6 +22,7 @@
+ #define VW_LO 36u
+ #define VW_OCT 4u
+ #define VW_PULSE 32                                     /* a pulse: 32 x 32 in a corner of the wheel's rows */
++#define VIEW_PARTS 2u                                   /* muse-midi-dx: the parts shown (1 keys, 2 drums) */
+ 
+ static struct {
+     uint32_t wheel, keys, pulse[NTRK];                  /* what each part drew */
+@@ -45,8 +46,8 @@
+     uint32_t k, i, n = 0, added = 0;
+     memset(on, 0, 16);
+     fm1_irq_off();                                      /* (one coherent ISR snapshot) */
+-    for (k = 0; k < trk_n(); k++) {                     /* (the selected one last: its colour wins) */
+-        uint32_t t = k + 1u == trk_n() ? song.sel % NTRK : k < song.sel ? k : k + 1u;
++    for (k = 0; k < VIEW_PARTS; k++) {                  /* (muse-midi-dx: parts 1 and 2, the played ones; 1 last) */
++        uint32_t t = VIEW_PARTS - 1u - k;
+         if (drum_track(&trk[t]))
+             continue;
+         for (i = 0; i < NVOICE; i++) {
+@@ -234,7 +235,8 @@
+ /* track k's pulse: a ring in its colour, a disc in it as large as its level now */
+ static void view_pulse(uint32_t k)
+ {
+-    static const uint8_t PX[NPART] = {6, 202, 6, 202}, PY[NPART] = {36, 36, 170, 170};
++    static const uint8_t PX[4] = {6, 202, 6, 202}, PY[4] = {36, 36, 170, 170};
++    if (k >= 4u) return;
+     track_t *t = &trk[k];
+     int32_t m = t->p[P_MUTE] ? 0 : meter_px(t->peak);
+     uint32_t sig;
+@@ -262,7 +264,7 @@
+     stage_knobs();
+     if (!ui.force && (ui.frame & 1u))
+         return;
+-    for (k = 0; k < trk_parts(); k++)                   /* (the parts': a MIDI-only track has no level) */
++    for (k = 0; k < VIEW_PARTS && k < trk_parts(); k++) /* (the played parts': keys top left, drums top right) */
+         view_pulse(k);
+     view_notes(on, of, &faded);
+     sig = 2166136261u;

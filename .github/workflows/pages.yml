@@ -1,0 +1,35 @@
+# Publish the game (web/) to GitHub Pages on every push to main.
+# web/melodee.wasm is committed (built with scripts/build-emu.sh: Melodee plus patches/), so nothing is built here.
+# One-time setup on GitHub: Settings > Pages > Build and deployment > Source: GitHub Actions.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4          # (no submodules: the built web/ is all the site needs)
+      - name: Check the built firmware is there
+        run: test -s web/melodee.wasm || { echo "web/melodee.wasm missing: run npm run build:emu and commit it"; exit 1; }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v4

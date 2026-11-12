@@ -1,0 +1,11 @@
+{
+  "name": "muse-midi-dx",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "build:emu": "sh scripts/build-emu.sh",
+    "dev": "node scripts/serve.mjs",
+    "check:native": "sh scripts/build-emu.sh --prepare && sh emu/native_check.sh"
+  }
+}
