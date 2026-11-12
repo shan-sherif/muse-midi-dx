@@ -227,6 +227,12 @@ input[type=checkbox], input[type=range] { accent-color: var(--foam); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 @media (max-width: 1100px) { .controls { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .transport { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; } }
 @media (max-width: 700px) { .controls { grid-template-columns: minmax(0, 1fr); } }
+/* the welcome's second tag: above Load .mid, its tip down (the input inside the label covers it: no clicks) */
+.callout.callout-up { top: auto; bottom: calc(100% + 10px); left: 50%; right: auto; transform: translateX(-50%); z-index: 5;
+                      pointer-events: none; animation: bob-up 1.2s ease-in-out infinite; }
+.callout.callout-up::before { top: auto; bottom: -6px; right: auto; left: 50%; margin-left: -6px; border-bottom: 0;
+                              border-top: 6px solid var(--foam); }
+@keyframes bob-up { 0%, 100% { transform: translateX(-50%); } 50% { transform: translateX(-50%) translateY(-4px); } }
 .file { position: relative; background: var(--btn); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 12px; cursor: pointer; color: var(--fg); }
 .file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 output { font-variant-numeric: tabular-nums; min-width: 4.5em; }
@@ -279,6 +285,8 @@ output.speed-v { min-width: 3.4em; font-family: var(--mono); font-weight: 800; c
 .pick-inst button small { color: var(--dim); font-size: 11.5px; }
 .pick-inst button[aria-checked="true"] { border-color: var(--coral); box-shadow: inset 0 0 0 1px var(--coral); }
 .pick-inst button[aria-checked="true"] b { color: var(--coral); }
+.welcome-song { color: var(--dim); font-size: 13px; margin: -8px 0 16px; }
+.welcome-song b { color: var(--foam); }
 .welcome-two { color: var(--dim); font-size: 13px; margin: -8px 0 16px; }
 .welcome-two b { color: var(--foam); }
 #routing-btn { padding: 8px 12px; border-radius: 10px; }
@@ -367,5 +375,5 @@ output.speed-v { min-width: 3.4em; font-family: var(--mono); font-weight: 800; c
 .welcome-card p b { color: var(--foam); }
 button.big { font-size: 16px; padding: 10px 26px; border-radius: 10px; }
 .pointer { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 4; color: var(--foam); overflow: visible; }
-.pointer path#pointer-path { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 8 8; animation: march 0.8s linear infinite; }
+.pointer path#pointer-path, .pointer path#pointer-path-mid { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 8 8; animation: march 0.8s linear infinite; }
 @keyframes march { to { stroke-dashoffset: -16; } }

@@ -420,10 +420,16 @@ function drawPointer() {
   const x0 = from.left + from.width / 2, y0 = from.top - 18, x1 = to.left + to.width / 2, y1 = to.bottom + 44;
   // (y1: under the callout bubble)
   $("pointer-path").setAttribute("d", `M ${x0} ${y0} C ${x0} ${(y0 + y1) / 2}, ${x1} ${(y0 + y1) / 2 + 40}, ${x1} ${y1}`);
+  // the second: from the card's foot down to Load .mid's tag (your own songs)
+  const card = $("welcome").querySelector(".welcome-card").getBoundingClientRect(), tag = $("callout-mid").getBoundingClientRect();
+  if (!tag.width) { $("pointer-path-mid").removeAttribute("d"); return; }
+  const a0 = card.left + card.width / 2, b0 = card.bottom + 10, a1 = tag.left + tag.width / 2, b1 = tag.top - 12;
+  $("pointer-path-mid").setAttribute("d", `M ${a0} ${b0} C ${a0} ${(b0 + b1) / 2}, ${a1} ${(b0 + b1) / 2 - 30}, ${a1} ${b1}`);
 }
 function showWelcome(on) {
   $("welcome").hidden = !on;
   $("callout").hidden = !on || $("midiin").disabled;
+  $("callout-mid").hidden = !on;
   $("midi-pick").classList.toggle("glow", on && !$("midiin").disabled);
   drawPointer();
 }

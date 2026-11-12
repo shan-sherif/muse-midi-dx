@@ -124,6 +124,7 @@
           </div>
           <p id="welcome-text">Connect your MIDI device, then choose it in <b>MIDI in</b> at the top.
             No device? Play with the computer keys, or click the keys and pads.</p>
+          <p class="welcome-song">Have a song as a MIDI file? Load it with <b>Load .mid</b> below.</p>
           <p class="welcome-two" id="welcome-two" hidden>Two devices (a keyboard and a drum kit)? Once switched on, open
             <b>Routing</b> at the top to send each one to its instrument.</p>
           <button class="primary big" id="power">OK, switch on</button>
@@ -180,7 +181,8 @@
         <div class="tag" id="h-song">Song</div>
         <div class="row">
           <label class="grow"><span class="sr">Song</span><select id="song" aria-label="Song"></select></label>
-          <label class="file">Load .mid<input type="file" id="midfile" accept=".mid,.midi,audio/midi"></label>
+          <label class="file" id="midfile-label">Load .mid<input type="file" id="midfile" accept=".mid,.midi,audio/midi">
+            <span class="callout callout-up" id="callout-mid" hidden>Load your own MIDI song here</span></label>
           <button id="setup-btn" title="Choose a section of the song, and who plays what">Setup</button>
         </div>
         <div class="row small">
@@ -282,6 +284,7 @@
   <defs><marker id="arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
     <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
   <path id="pointer-path" marker-end="url(#arrowhead)"/>
+  <path id="pointer-path-mid" marker-end="url(#arrowhead)"/>
 </svg>
 <script type="module" src="app.js"></script>
 <!-- visits, counted by GoatCounter: no cookies, no personal data; its script skips localhost and local addresses.
