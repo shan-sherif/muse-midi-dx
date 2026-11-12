@@ -194,6 +194,14 @@
             <input type="range" id="speed" min="0" max="26" step="1" value="12"> <output id="speed-v" class="speed-v">x4</output></label>
         </div>
         <div class="row small">
+          <span class="octave tempo" role="group" aria-label="Tempo" title="Play the song slower or faster (25% to 200% of its own tempo). Pitch stays the same.">
+            <span class="dim">Tempo</span>
+            <button id="tempo-down" aria-label="1 BPM slower">−</button><input type="number" id="tempo-v" aria-label="Tempo in BPM" inputmode="numeric"><button id="tempo-up" aria-label="1 BPM faster">+</button>
+            <span class="dim small" id="tempo-orig"></span>
+            <button id="tempo-reset" title="Back to the song's own tempo" disabled>Reset</button>
+          </span>
+        </div>
+        <div class="row small">
           <label><input type="checkbox" id="metro"> Metronome</label>
           <label>Offset <input type="range" id="offset" min="-150" max="150" step="5" value="0"> <output id="offset-v">0 ms</output></label>
         </div>

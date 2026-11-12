@@ -753,6 +753,8 @@ if (!["auto", "fold", "score"].includes(outMode)) outMode = "auto";
 /* a song's setup, kept on the song: its parts' assignment (who plays what), its section (start / end, in beats) and
  * transpose (songShift). chartNow() builds what is played from them */
 const songShift = new Map();                           // chart -> semitones
+const songTempo = new Map();                           // chart -> tempo ratio (1: as written; 0.75: three quarters as fast)
+const tempoOf = (c) => songTempo.get(c) || 1;
 const PART_COLORS = { you: "#8ea4ce", drums: "#92b88e", 3: "#d6b668", 4: "#da8c80", 5: "#b2ad9b", 6: "#b6a287", off: "rgba(142,166,196,0.35)" };   // (applyTheme: the device's track colours)
 applyTheme(0);                                         // (LO-FI until the device says otherwise)
 function autoAssign(c) {                               // piano (else the busiest): your keys; the drum kit: your drums; bass 2; another 3
@@ -810,6 +812,9 @@ function chartNow() {
   }
   if (outMode === "fold") notes.sort((a, b) => a.t - b.t || a.p - b.p);
   if (outMode === "auto") accomp.sort((a, b) => a.t - b.t);
+  // the tempo (Tempo): every time scaled; pitch unchanged (before the trim below: its 20 ms hold at any tempo)
+  const r = tempoOf(c);
+  if (r !== 1) for (const list of [notes, drums, accomp, ghosts]) for (const n of list) { n.t /= r; n.d /= r; }
   // the same key twice: the first let go 20 ms before the next (or the device hears one press: the second never sounds,
   // never judged); notes 30 ms apart or closer are one press (Game.noteOn)
   const lastOn = new Map();
@@ -820,11 +825,12 @@ function chartNow() {
   }
   drums.sort((a, b) => a.t - b.t || a.p - b.p);
   accomp.sort((a, b) => a.t - b.t);
-  const beats = c.beats.slice(c.range.start, c.range.end + 1).map((b) => b - t0);
-  const spb = beats.length > 1 ? beats[1] - beats[0] : 60 / c.bpm;
+  const beats = c.beats.slice(c.range.start, c.range.end + 1).map((b) => (b - t0) / r);
+  const spb = beats.length > 1 ? beats[1] - beats[0] : 60 / c.bpm / r;
   const ends = [...notes, ...drums, ...accomp].map((n) => n.t + n.d);
-  return { title: c.title, bpm: Math.round(60 / spb), beatsPerBar: c.beatsPerBar, beats, notes, drums, accomp, ghosts, outside,
-           length: Math.min(t1 - t0, ends.length ? Math.max(...ends) : t1 - t0),
+  return { title: c.title, bpm: Math.round(60 / spb), origBpm: Math.round((60 / spb) / r), tempo: r, beatsPerBar: c.beatsPerBar,
+           beats, notes, drums, accomp, ghosts, outside,
+           length: Math.min((t1 - t0) / r, ends.length ? Math.max(...ends) : (t1 - t0) / r),
            section: c.range.start > 0 || c.range.end < c.beats.length - 1 ? [t0, t1] : null };
 }
 function showShift() {
@@ -832,7 +838,32 @@ function showShift() {
   $("st-v").textContent = t > 0 ? `+${t}` : String(t);
   $("st-v").classList.toggle("moved", t !== 0);
   $("st-v").title = t ? `${Math.abs(t)} semitone${Math.abs(t) > 1 ? "s" : ""} ${t > 0 ? "up" : "down"}` : "as written";
+  showTempo();
 }
+// the tempo: the song's BPM, slower or faster (25% to 200% of its own), the original shown and a Reset back to it
+function showTempo() {
+  const c = chartNow(), lo = Math.max(1, Math.ceil(c.origBpm * 0.25)), hi = Math.floor(c.origBpm * 2);
+  const v = $("tempo-v");
+  if (document.activeElement !== v) v.value = c.bpm;
+  v.min = lo; v.max = hi;
+  v.classList.toggle("moved", c.tempo !== 1);
+  $("tempo-orig").textContent = `original ${c.origBpm}`;
+  $("tempo-reset").disabled = c.tempo === 1;
+  $("tempo-down").disabled = c.bpm <= lo;
+  $("tempo-up").disabled = c.bpm >= hi;
+}
+function setTempo(bpm) {
+  const c = charts[$("song").value], orig = chartNow().origBpm;
+  if (!(bpm > 0)) return showTempo();
+  bpm = Math.max(Math.ceil(orig * 0.25), Math.min(Math.floor(orig * 2), Math.round(bpm)));
+  if (bpm === orig) songTempo.delete(c); else songTempo.set(c, bpm / orig);
+  reloadSong();
+}
+$("tempo-down").onclick = () => setTempo(chartNow().bpm - 1);
+$("tempo-up").onclick = () => setTempo(chartNow().bpm + 1);
+$("tempo-v").onchange = () => setTempo(Number($("tempo-v").value));
+$("tempo-v").addEventListener("keydown", (e) => { if (e.key === "Enter") $("tempo-v").blur(); });
+$("tempo-reset").onclick = () => { songTempo.delete(charts[$("song").value]); reloadSong(); };
 function reloadSong() {                                // after any change to the song's setup
   stopSong();
   loadSong(chartNow());
@@ -860,7 +891,7 @@ function showSongInfo() {
   $("h-title").textContent = c.title;
   pushBpm(c.bpm);
   renderTabs();                                        // (the parts' names: the song's instruments)
-  $("h-bpm").textContent = c.bpm;
+  $("h-bpm").textContent = c.bpm + (c.tempo !== 1 ? ` · original ${c.origBpm}` : "");
   const count = inst === "keys" ? `${c.notes.length} notes` : inst === "drums" ? `${c.drums.length} hits` : `${c.notes.length} notes + ${c.drums.length} hits`;
   $("h-notes").textContent = `${count} · ${clock(c.length)}` + (c.section ? ` · section ${clock(c.section[0])}–${clock(c.section[1])}` : "") +
     (c.accomp.length ? ` · +${new Set(c.accomp.map((n) => n.ch)).size} part${new Set(c.accomp.map((n) => n.ch)).size > 1 ? "s" : ""}` : "") +
@@ -1034,14 +1065,14 @@ function togglePreview(i) {
   const s0 = beatAt(c, c.range.start), s1 = beatAt(c, c.range.end);
   const first = p.notes.find((n) => n.t >= s0 - 1e-6 && n.t < s1) || p.notes[0];
   if (!first) return;
-  const t0 = first.t, shift = p.drum ? 0 : songShift.get(c) || 0, at0 = ac.currentTime + 0.1;
+  const t0 = first.t, shift = p.drum ? 0 : songShift.get(c) || 0, at0 = ac.currentTime + 0.1, r = tempoOf(c);
   ui.status(`▶ ${p.name} from ${clock(t0)}` + (first.t < s0 || first.t >= s1 ? " (no notes in the section)" : ""));
   for (const n of p.notes) {
-    if (n.t < t0 || n.t >= t0 + 8) continue;
-    const at = at0 + n.t - t0, pitch = n.p + shift;
+    if (n.t < t0 || n.t >= t0 + 8 * r) continue;        // (8 s at the song's tempo)
+    const at = at0 + (n.t - t0) / r, pitch = n.p + shift;
     if (pitch < 0 || pitch > 127) continue;
     send({ type: "midiAt", at, data: [0x90 | (ch - 1), pitch, n.v || 96] });
-    send({ type: "midiAt", at: at + Math.max(0.04, n.d - 0.02), data: [0x80 | (ch - 1), pitch, 0] });
+    send({ type: "midiAt", at: at + Math.max(0.04, n.d / r - 0.02), data: [0x80 | (ch - 1), pitch, 0] });
   }
   preview = { part: i, timer: setTimeout(stopPreview, 8300) };
   renderParts();
@@ -1194,7 +1225,8 @@ function resetAll() {
   if (midi) for (const id of roles.keys()) roles.delete(id);   // the devices: the top selector's one, as Keyboard
   setInstrument("keys");
   if (midi) fillInputs();
-  songShift.clear();                                   // the songs' setups: transpose, section, who plays what
+  songShift.clear();
+  songTempo.clear();                                   // the songs' setups: transpose, section, who plays what
   for (const c of charts) { delete c.assign; delete c.range; }
   reloadSong();
   if (!$("setup").hidden) openSetup();

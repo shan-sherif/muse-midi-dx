@@ -377,3 +377,12 @@ button.big { font-size: 16px; padding: 10px 26px; border-radius: 10px; }
 .pointer { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 4; color: var(--foam); overflow: visible; }
 .pointer path#pointer-path, .pointer path#pointer-path-mid { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 8 8; animation: march 0.8s linear infinite; }
 @keyframes march { to { stroke-dashoffset: -16; } }
+
+/* the tempo: a BPM box between − and +, the original beside it */
+.tempo input { width: 4.2em; text-align: center; font-family: var(--mono); font-size: 12.5px; padding: 3px 4px; border-radius: 6px;
+               background: var(--field); border: 1px solid var(--line-2); color: var(--fg); -moz-appearance: textfield; }
+.tempo input::-webkit-outer-spin-button, .tempo input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.tempo input.moved { color: var(--coral); border-color: var(--coral); font-weight: 800; }
+.tempo button { padding: 3px 9px; }
+.tempo #tempo-reset { padding: 3px 10px; }
+.tempo #tempo-orig { white-space: nowrap; }

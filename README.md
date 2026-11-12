@@ -68,6 +68,9 @@ the names of the file's instruments ("Finger Bass", "Alto Sax" …) to help with
     yours, the drum kit yours, a bass on Instrument 1, the busiest of the rest on 2–4.
   - **Sounds** for Instruments 1–4.
 - **Transpose:** move the song up or down by semitones (« » a whole octave), ±24. Drums are not transposed.
+- **Tempo:** play the song slower or faster: − / + by 1 BPM, or type a BPM (25% to 200% of the song's own). The
+  original stays shown beside it, and **Reset** puts it back. Everything follows: the notes, the band, the metronome
+  and the device's BPM; pitch stays the same. Kept per song until the page is reloaded.
 - **CPU / User:** CPU (the default) plays your part for you; User leaves it to you. You can switch mid-song.
 
 ### The Piano box
