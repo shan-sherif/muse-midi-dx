@@ -26,7 +26,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4          # (no submodules: the built web/ is all the site needs)
       - name: Check the built firmware is there
-        run: test -s web/melodee.wasm || { echo "web/melodee.wasm missing: run npm run build:emu and commit it"; exit 1; }
+        run: |
+          if [ ! -s web/melodee.wasm ]; then
+            echo "web/melodee.wasm is missing. Run npm run build:emu and commit it."
+            exit 1
+          fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
