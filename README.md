@@ -215,6 +215,11 @@ I started this project to combine the emulated hardware from the MVAVE FM-1 deve
 Muse-Midi-DX was written with the help of Claude Opus 5.5, an AI model by Anthropic,
 and the result was checked manually.
 
+## Privacy
+
+The page counts visits with [GoatCounter](https://www.goatcounter.com/) (no cookies, no personal data). Settings
+are saved only in your own browser.
+
 ## Licence
 
 Copyright (C) 2026 shan-sherif
