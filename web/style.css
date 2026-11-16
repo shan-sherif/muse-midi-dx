@@ -386,3 +386,17 @@ button.big { font-size: 16px; padding: 10px 26px; border-radius: 10px; }
 .tempo button { padding: 3px 9px; }
 .tempo #tempo-reset { padding: 3px 10px; }
 .tempo #tempo-orig { white-space: nowrap; }
+
+/* the welcome on a short window: it scrolls, its top never cut (safe centring); tighter when very short */
+.welcome { overflow-y: auto; justify-content: safe center; }
+.welcome-card { flex: none; }
+@media (max-height: 640px) {
+  .welcome-card { padding: 16px 18px; }
+  .welcome-card h2 { font-size: 19px; }
+  .pick-inst { margin: 8px 0 10px; }
+  .pick-inst button { padding: 8px 6px; }
+  .welcome-card p { margin-bottom: 12px; font-size: 13px; }
+}
+@media (max-height: 760px) {                         /* (shorter than the card fits in the notes: over the page, under the top bar) */
+  .welcome { position: fixed; inset: 0; z-index: 3; padding-top: max(16px, var(--top-h, 110px)); }
+}

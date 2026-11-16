@@ -433,7 +433,10 @@ function showWelcome(on) {
   $("midi-pick").classList.toggle("glow", on && !$("midiin").disabled);
   drawPointer();
 }
-addEventListener("resize", drawPointer);
+// the top bar's height and its tag (the welcome, over the page on a short window, starts under them)
+const topHeight = () => document.documentElement.style.setProperty("--top-h", `${Math.ceil($("top").getBoundingClientRect().bottom) + 48}px`);
+topHeight();
+addEventListener("resize", () => { topHeight(); drawPointer(); });
 if (!navigator.requestMIDIAccess)
   $("welcome-text").innerHTML = "This browser has no Web MIDI (use Chrome or Edge for a MIDI keyboard). " +
     "You can still play with the computer keys or by clicking the piano.";
