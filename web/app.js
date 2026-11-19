@@ -13,7 +13,7 @@ const $ = (id) => document.getElementById(id);
  * project of shan-sherif.github.io), so "theme" alone could be another project's */
 const STORE_PREFIX = "muse-midi-dx:";
 const STORE_KEYS = ["theme", "sounds", "keysize", "keyshift", "transpose", "speed", "speedx", "offset", "metro", "letters",
-                    "instrument", "routes", "mix", "drumw", "outside", "matchsounds"];
+                    "instrument", "routes", "mix", "drumw", "outside", "matchsounds", "waves"];
 const store = { get(k) { try { return localStorage.getItem(STORE_PREFIX + k); } catch { return null; } },
                 set(k, v) { try { localStorage.setItem(STORE_PREFIX + k, v); } catch {} },
                 del(k) { try { localStorage.removeItem(STORE_PREFIX + k); } catch {} } };
@@ -185,6 +185,74 @@ function draw(fb) {
   }
   sctx.putImageData(img, 0, 0);
 }
+
+/* ---- the waves (in the header, between the song and the score): every sounding part's wave, overlaid, in its part's
+ * colour (patches/06-part-scope.patch). Each
+ * frame brings each sounding part's last 1024 samples; a wave is drawn from a rising zero crossing (it holds still, as an
+ * oscilloscope's), all parts on one scale that follows the loudest. A part gone quiet fades out over a few frames. No
+ * names on it: the Sound tabs, in the same colours, glow with the parts sounding */
+const SCOPE_SHOW = 768;                                 // samples across the screen (17 ms)
+let wavesOn = store.get("waves") !== "0", scopeGain = 1 / 8000, scopeLast = new Map();   // part -> { pts, a }
+const partColor = (t) => PART_COLORS[t === 0 ? "you" : t === 1 ? "drums" : t + 1];
+function scopeTrigger(row, from, to) {                  // a rising zero crossing after the row's lowest point near the start
+  let lo = from;
+  for (let i = from; i < to; i++) if (row[i] < row[lo]) lo = i;
+  for (let i = lo + 1; i < to + SCOPE_SHOW / 4 && i < row.length - SCOPE_SHOW; i++) if (row[i - 1] < 0 && row[i] >= 0) return i;
+  return from;
+}
+function drawScope(sc) {
+  const cv = $("scope"), dpr = devicePixelRatio || 1, r = cv.getBoundingClientRect();
+  if (!r.width) return;
+  const W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = `rgba(${game.th.text},0.08)`;          // the centre line and quarter marks
+  ctx.fillRect(0, Math.round(H / 2), W, Math.max(1, dpr));
+  for (let k = 1; k < 4; k++) ctx.fillRect(Math.round((k * W) / 4), 0, Math.max(1, dpr / 2), H);
+  // this frame's waves
+  let peak = 0;
+  if (sc) {
+    for (let k = 0; k < sc.parts.length; k++) {
+      const row = sc.data.subarray(k * sc.w, (k + 1) * sc.w);
+      for (let i = 0; i < row.length; i++) { const a = row[i] < 0 ? -row[i] : row[i]; if (a > peak) peak = a; }
+      const at = scopeTrigger(row, 0, sc.w - SCOPE_SHOW - SCOPE_SHOW / 4);
+      scopeLast.set(sc.parts[k], { pts: row.slice(at, at + SCOPE_SHOW), a: 1 });
+    }
+  }
+  // one scale for all: the loudest near the top quarter, rising at once and falling slowly
+  const want = peak ? 0.42 / peak : scopeGain;
+  scopeGain = want < scopeGain ? want : scopeGain + (Math.min(want, 1 / 600) - scopeGain) * 0.06;
+  const here = new Set(sc ? sc.parts : []);
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 1.6 * dpr;
+  for (const [t, w] of scopeLast) {
+    if (!here.has(t)) { w.a -= 0.2; if (w.a <= 0) { scopeLast.delete(t); continue; } }
+    ctx.globalAlpha = 0.9 * w.a;
+    ctx.strokeStyle = partColor(t);
+    ctx.beginPath();
+    for (let i = 0; i < w.pts.length; i++) {
+      const x = (i / (w.pts.length - 1)) * W, y = H / 2 - w.pts[i] * scopeGain * H;
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+function setWaves(on) {
+  wavesOn = on;
+  store.set("waves", on ? "1" : "0");
+  $("waves-btn").setAttribute("aria-pressed", on);
+  $("scope-wrap").hidden = !on;
+  document.querySelector(".hud").classList.toggle("waves-on", on);
+  scopeLast.clear();
+  if (on) drawScope(null);
+  send({ type: "scope", on });
+}
+$("waves-btn").onclick = () => setWaves(!wavesOn);
+$("waves-btn").setAttribute("aria-pressed", wavesOn);   // (as last time; drawn once the device is on)
+$("scope-wrap").hidden = !wavesOn;
+document.querySelector(".hud").classList.toggle("waves-on", wavesOn);
 
 /* =================================================================== sounds: one browser over every factory preset */
 // every engine's presets in one list, filtered by a search, a category (the firmware's PRESETS categories) and an engine
@@ -515,6 +583,7 @@ function onWorklet(e) {
   const m = e.data;
   if (m.type === "frame") {
     if (m.fb) draw(m.fb);
+    if (wavesOn) drawScope(m.scope || null);
     keys.forEach((el, i) => el.classList.toggle("lit", !!(m.keys & (1 << i))));
     buttons.forEach((el, i) => el.classList.toggle("lit", !!(m.buttons & (1 << i))));
     if (m.tracks) {
@@ -533,6 +602,7 @@ function onWorklet(e) {
     setupThemes(m.palettes);
     setupSounds(m.engines, m.categories);
     restoreSettings(m);
+    send({ type: "scope", on: wavesOn });
     applySongSounds();                                  // (the song's instruments' sounds, over the saved ones)
     if (!$("setup").hidden) renderPartSounds();
     sentBpm = 0;
@@ -1336,6 +1406,7 @@ function resetAll() {
   $("offset").value = 0; game.offset = 0; $("offset-v").textContent = "0 ms";
   $("metro").checked = false;                          // (off by default)
   setDrumWidth(DRUM_W_DEFAULT, false);
+  setWaves(true); store.del("waves");
   $("letters").checked = true; game.showLetters = true;
   setMode(true);
   if (midi) for (const id of roles.keys()) roles.delete(id);   // the devices: the top selector's one, as Keyboard

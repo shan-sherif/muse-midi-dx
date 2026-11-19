@@ -121,6 +121,13 @@ The FM-1's own 240×240 screen, top left, shows the chord view: the notes of par
 chord's name, and a keyboard. It also shows the song's BPM. The device's own controls are under **Advanced** in the
 left column.
 
+**Waves**, in the middle of the header between the song's title and the score, shows the wave of every part that
+is sounding, overlaid, each in its part's colour: the same colour as its Sound tab, which glows with it. They are the
+parts' real signals, after their level, mute and solo and before pan and the effects. Each is drawn from a rising zero
+crossing, so a held note stands still as on an oscilloscope, and all share one scale that follows the loudest. The
+**Waves** button next to "Now playing" hides them (on by default, kept). On a narrow window they get a row of their
+own under the title.
+
 ### Themes and settings
 
 - **Theme** (top): the device screen's palette. The whole page takes its colours from it: NIGHT, DAY, CONTRAST,
@@ -237,6 +244,14 @@ every build.
   tracks past the saved four. Loading a project turned parts 5 and up into MIDI tracks.
 - The device's screens: track keys exist for the first 8 parts only. Screens that show four tracks at a time end
   their last group at the last track (12–15 would be past it).
+
+`patches/06-part-scope.patch`:
+
+- **The wave screen's signal.** Each part's last 2,048 samples as it goes into the mix (`part_scope`, 16-bit), and
+  zeros for a part that is silent in a block. `emu/game_glue.c` exposes it (`game_scope_ptr`, `_len`, `_pos`); the
+  worklet sends the sounding parts' last 1,024 samples in its frames while the Waves screen is shown. Melodee's own
+  master scope (`audio.c`, `SCOPE_N`) is a different buffer. The names differ (`PART_SCOPE_N`) because the build
+  hides warnings, so a redefined macro passes silently.
 
 The glue (`emu/game_glue.c`, `game_init`) also turns off Melodee's DRUM channel setting, which sends channel 10 to
 the drum part. The page routes every note to its part itself, so channel 10 is Instrument 8's.

@@ -166,3 +166,8 @@ EXPORT(game_part_count) uint32_t game_part_count(void) { return NPART; }
 /* after web_boot: the page routes every note to its part's channel itself (your drums: channel 2), so channel 10 is
  * Instrument 8's, not the drum part's (Melodee's DRUM channel setting: off) */
 EXPORT(game_init) void game_init(void) { settings_drumch = 0; }
+/* the wave screen (patches/06-part-scope.patch): each part's last PART_SCOPE_N samples, int16, part p at ptr + p * PART_SCOPE_N;
+ * pos: where the next sample goes (the newest is pos - 1) */
+EXPORT(game_scope_ptr) const int16_t *game_scope_ptr(void) { return &part_scope[0][0]; }
+EXPORT(game_scope_len) uint32_t game_scope_len(void) { return PART_SCOPE_N; }
+EXPORT(game_scope_pos) uint32_t game_scope_pos(void) { return part_scope_pos; }

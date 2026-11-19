@@ -1,0 +1,42 @@
+--- a/firmware/src/mix.c	2026-11-19 14:22:22
++++ b/firmware/src/mix.c	2026-11-19 15:33:23
+@@ -107,6 +107,17 @@
+ 
+ 
+ static void events_block(uint32_t n);
++/* (muse-midi-dx: the page's wave screen. Each part's last PART_SCOPE_N samples, as it goes into the mix (after MUTE / solo
++ * and LEVEL, before pan and the effects), 16-bit; part_scope_pos: where the next block goes. A part silent in a block (not
++ * rendered, a MIDI track, past the parts in use) has zeros there. emu/game_glue.c hands them to the page) */
++#define PART_SCOPE_N 2048u
++static int16_t part_scope[NPART][PART_SCOPE_N];
++static uint32_t part_scope_pos;
++static void part_scope_put(uint32_t p, const int32_t *b, uint32_t n, int32_t lvl)
++{
++    for (uint32_t i = 0; i < n; i++)
++        part_scope[p][(part_scope_pos + i) & (PART_SCOPE_N - 1u)] = (int16_t)clamp(((b[i] >> 4) * lvl) >> 12, -32767, 32767);
++}
+ #if MELODEE_USB_AUDIO
+ static int ua_capture_active(void);
+ static uint8_t track_capture_on, master_capture_on;   /* track_capture holds the stems, or the stereo mix at unity */
+@@ -303,6 +314,7 @@
+     AP_START(mix_start);
+     if(rendered){
+         mix_solo(t,part_buf,n);
++        if((uint32_t)(t-trk)<NPART)part_scope_put((uint32_t)(t-trk),part_buf,n,LEVEL_Q12[t->p[P_LEVEL]&127]);   /* (muse-midi-dx) */
+         if(spread_on)mix_spread(t,part_buf,n);
+         else{
+             mix_cache_t *mc=&mix_cache[(uint32_t)(t-trk)];
+@@ -351,6 +363,7 @@
+     if(track_capture_on)memset(track_capture,0,n*NPART*sizeof *track_capture);
+ #endif
+     memset(mix_l,0,n*sizeof *mix_l);memset(mix_r,0,n*sizeof *mix_r);
++    for(uint32_t p=0;p<NPART;p++)for(uint32_t i=0;i<n;i++)part_scope[p][(part_scope_pos+i)&(PART_SCOPE_N-1u)]=0;   /* (muse-midi-dx: the wave screen) */
+     dither_block();                                     /* (before any engine renders: dsp.c) */
+     AP_START(events_start);events_block(n);AP_END(AP_EVENTS,events_start);
+     fx_bus_select();fx_send_on=(uint8_t)fx_bus_active();if(fx_send_on){memset(fx_send_l,0,n*sizeof *fx_send_l);memset(fx_send_r,0,n*sizeof *fx_send_r);
+@@ -368,4 +381,5 @@
+     fx_bus_join();
+     void (*volatile run)(int32_t *,uint32_t)=master_samples;
+     AP_START(output_start);run(out,n);AP_END(AP_OUTPUT,output_start);
++    part_scope_pos=(part_scope_pos+n)&(PART_SCOPE_N-1u);               /* (muse-midi-dx: the wave screen) */
+ }

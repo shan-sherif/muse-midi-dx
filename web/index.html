@@ -90,7 +90,8 @@
   <section class="card game-card">
     <div class="hud">
       <div class="info">
-        <div class="tag">Now playing</div>
+        <div class="tag-row"><div class="tag">Now playing</div>
+          <button class="waves-btn" id="waves-btn" aria-pressed="true" title="Show or hide the waves: every sounding part's wave, in its colour">Waves</button></div>
         <div class="song-title" id="h-title">—</div>
         <div class="song-meta">
           <span class="bpm">BPM <b id="h-bpm">—</b></span>
@@ -98,6 +99,10 @@
           <span class="level"><span class="dim">level</span> <span class="meter" id="h-level" aria-label="Level"></span></span>
         </div>
       </div>
+      <div class="scope-wrap" id="scope-wrap">
+        <canvas id="scope" aria-label="The parts' waves, each in its part's colour"></canvas>
+      </div>
+      <div class="scores">
       <div class="scorebox">
         <div class="tag">Score</div>
         <b id="score" class="digits">0</b>
@@ -108,6 +113,7 @@
         <div class="tag">Combo</div>
         <b id="combo" class="digits">0</b>
         <div class="sub">best <b id="maxcombo">0</b></div>
+      </div>
       </div>
       <div class="counts"><i class="pf" id="c-pf">0</i><i class="gr" id="c-gr">0</i><i class="gd" id="c-gd">0</i><i class="ms" id="c-ms">0</i></div>
     </div>

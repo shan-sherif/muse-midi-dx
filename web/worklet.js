@@ -5,7 +5,9 @@
 //   - timed MIDI ("midiAt"): played when the audio clock reaches `at` (demo playback)
 //   - the engine/preset catalogue and preset loading
 
-let PARTS = [0, 1, 2, 3, 4, 5];                        // the synth parts, as the firmware has them (load: game_part_count):
+let PARTS = [0, 1, 2, 3, 4, 5];
+const SCOPE_W = 1024;                                  // the wave screen: samples a part a frame (23 ms: a 44 Hz cycle)
+const SCOPE_FLOOR = 24;                                // the wave screen: below this (-63 dB of full scale) a part is quiet                        // the synth parts, as the firmware has them (load: game_part_count):
                                                        // 1 keys, 2 drums, the rest the song's instruments
 
 class MelodeeGame extends AudioWorkletProcessor {
@@ -78,6 +80,7 @@ class MelodeeGame extends AudioWorkletProcessor {
       this.timed = this.timed.filter((t) => !mine(t));
     } else if (m.type === "preset") ex.game_load(m.engine >>> 0, m.preset >>> 0);
     else if (m.type === "view") ex.game_view();
+    else if (m.type === "scope") this.scopeOn = !!m.on;
     else if (m.type === "bpm") ex.game_set_bpm(Math.round(m.bpm) >>> 0);
     else if (m.type === "palette") ex.game_palette_set(m.index >>> 0);
     else if (m.type === "tparam") ex.game_tparam_set(m.track >>> 0, m.k >>> 0, m.v | 0);
@@ -99,6 +102,24 @@ class MelodeeGame extends AudioWorkletProcessor {
     return { tracks: PARTS.map((t) => [0, 1, 2, 3, 4, 5, 6].map((k) => ex.game_tparam(t, k))),
              rack: [0, 1, 2, 3].map((sl) => [0, 1, 2, 3, 4].map((f) => ex.game_rack(sl, f))),
              ret: ex.game_rack(0, 5), mode: ex.game_rack(0, 6) };
+  }
+
+  // the wave screen's data: the parts with sound in their last SCOPE_W samples -> { parts: [part index …], w, data: Int16Array
+  // (a part's samples, oldest first, one after another) } or null (none)
+  scopeFrame() {
+    const ex = this.ex, len = ex.game_scope_len(), pos = ex.game_scope_pos(), W = SCOPE_W;
+    const all = new Int16Array(this.mem.buffer, ex.game_scope_ptr(), PARTS.length * len);
+    const parts = [], rows = [];
+    for (const p of PARTS) {
+      const row = new Int16Array(W), base = p * len;
+      let peak = 0;
+      for (let i = 0; i < W; i++) { const v = all[base + ((pos - W + i + len) % len)]; row[i] = v; if (v > peak) peak = v; else if (-v > peak) peak = -v; }
+      if (peak > SCOPE_FLOOR) { parts.push(p); rows.push(row); }   // (a tail's last few bits, or an engine's DC: not sounding)
+    }
+    if (!parts.length) return null;
+    const data = new Int16Array(parts.length * W);
+    rows.forEach((r, k) => data.set(r, k * W));
+    return { parts, w: W, data };
   }
 
   process(inputs, outputs) {
@@ -142,6 +163,10 @@ class MelodeeGame extends AudioWorkletProcessor {
         this.sentFb = gen;
         msg.fb = new Uint16Array(this.mem.buffer, ex.web_fb(), 240 * 240).slice();
         transfer.push(msg.fb.buffer);
+      }
+      if (this.scopeOn && ex.game_scope_ptr) {          // the wave screen: the last SCOPE_W samples of each sounding part
+        const sc = this.scopeFrame();
+        if (sc) { msg.scope = sc; transfer.push(sc.data.buffer); }
       }
       this.port.postMessage(msg, transfer);
     }
