@@ -5,15 +5,19 @@ Rhythm game with your MIDI controller right from your browser.
 **▶ Play it: [shan-sherif.github.io/muse-midi-dx](https://shan-sherif.github.io/muse-midi-dx/)** (Chrome or Edge for a
 MIDI keyboard or drum kit)
 
-[![muse-midi-dx playing Ode to Joy on piano and drums: notes falling onto the keys and drum pads. The device's screen showing the chord](docs/media/gameplay.gif)](https://shan-sherif.github.io/muse-midi-dx/)
+[![muse-midi-dx playing Ode to Joy on piano and drums: notes falling onto the keys and drum pads, the rhythm ring on the left showing the bar's piano notes and drum hits, the parts' waves in the header](docs/media/gameplay.gif)](https://shan-sherif.github.io/muse-midi-dx/)
 
 Notes fall towards a piano keyboard, a drum kit, or both, and you play them on a MIDI keyboard, an e-drum kit, the
 computer keyboard or the screen. Every press is judged PERFECT (±50 ms), GREAT (±100 ms), GOOD (±150 ms) or MISS.
 
-The sound comes from [Melodee](https://github.com/keremimo/melodee), synthesizer firmware for the M-VAVE FM-1 and a
-fork of [Felucca](https://github.com/hugelton/Felucca). It is compiled to WebAssembly and runs in the browser, so the
-engines, presets and effects are the firmware's own. No FM-1 is needed. The game runs a modified Melodee: fourteen
-parts and a four-slot effects rack (see [Our changes to Melodee](#our-changes-to-melodee)).
+The sound comes from a modified build of [Melodee](https://github.com/keremimo/melodee), synthesizer firmware for the
+M-VAVE FM-1 and a fork of [Felucca](https://github.com/hugelton/Felucca), compiled to WebAssembly and running in the
+browser. No FM-1 is needed. The game's build has fourteen parts, a four-slot effects rack and the parts' signals for
+the waves (see [Our changes to Melodee](#our-changes-to-melodee)). Melodee's own engines (PROPHET, FM6, CZ-1, SID and
+DRUM), presets and effects are joined by engines from two other FM-1 firmware projects: the TB-303 bass from
+[fm1-x0x](https://github.com/charlesvestal/fm1-x0x) and the analog synth from
+[sloop-fm1](https://github.com/isod89/sloop-fm1) ([engines/README.md](engines/README.md)). The screens (the chord wheel,
+the rhythm ring, the waves) are drawn by the page.
 
 ## Playing
 
@@ -43,7 +47,8 @@ shows all fourteen.
 
 - **Keyboard:** a falling-note piano. Blue notes are white keys, yellow notes are black keys.
 - **Drums:** eight lanes (Crash, Hi-hat, Snare, Kick, Tom 1, Tom 2, Floor, Ride), each in its kit colour.
-  General MIDI drum notes are grouped into them; open, closed and pedal hi-hat all count as Hi-hat, for example.
+  General MIDI drum notes are grouped into them; open, closed and pedal hi-hat all count as Hi-hat, for example. The
+  kit's other sounds (tambourine, cowbell, claps, shakers, congas …) have no lane: the device plays them, unscored.
 - **Both:** the piano and the drums side by side, with a combined score and a combo for each.
 
 ### Input
@@ -219,7 +224,7 @@ npm run check:native                            # the sanitizer check (see Check
 | `web/gmsounds.js` | each General MIDI instrument's nearest sound (Match sounds) |
 | `web/ring.js` | the rhythm ring (Drums and Both, in the device screen's place) and the chord names |
 | `web/wheel.js` | the chord wheel (Keyboard, in the device screen's place) |
-| `docs/media/gameplay.gif` | the README's recording: Ode to Joy on piano and drums, CPU mode |
+| `docs/media/gameplay.gif` | the README's recording: Ode to Joy on piano and drums (Both), CPU mode |
 
 ## Our changes to Melodee
 
@@ -284,6 +289,13 @@ every build.
   master scope (`audio.c`, `SCOPE_N`) is a different buffer. The names differ (`PART_SCOPE_N`) because the build
   hides warnings, so a redefined macro passes silently.
 
+`patches/07-screen-switch.patch`:
+
+- **Melodee's screen drawn only when it is shown.** The page draws its own screens and shows Melodee's only while
+  **Advanced** is open; the rest of the time a frame runs the LEDs alone (the buttons stay live), with no `ui_draw` and
+  no compare of the 115 KB frame, so no frame goes to the page either. On again, it is drawn whole. `emu/game_glue.c`:
+  `game_screen`.
+
 The glue (`emu/game_glue.c`, `game_init`) also turns off Melodee's DRUM channel setting, which sends channel 10 to
 the drum part. The page routes every note to its part itself, so channel 10 is Instrument 8's.
 
@@ -295,9 +307,19 @@ Built alongside, without patching Melodee's source: its palettes with the track 
 `npm run check:native` builds the patched firmware natively with AddressSanitizer and UndefinedBehaviorSanitizer. It
 plays all fourteen parts, sets their mix, selects every track, presses every button and knob, puts every effect in every
 rack slot (Chain and Split), every preset of every engine from `engines/` on every part, then runs 20,000 random
-inputs, engines switched on parts among them. `NATIVE_SEED=n` gives another random run, `NATIVE_TRACE=1` prints each
-input. The alignment and shift checks are off: the host harness removes every `__attribute__`, and the DSP code shifts negative values on
-purpose, both upstream as here.
+inputs, engines switched on parts and Melodee's screen switched off and on among them. `NATIVE_SEED=n` gives another
+random run, `NATIVE_TRACE=1` prints each input. The alignment and shift checks are off: the host harness removes every
+`__attribute__`, and the DSP code shifts negative values on purpose, both upstream as here.
+
+### Performance
+
+Measured on the WebAssembly build (Node, Apple silicon), audio CPU as a share of real time; an audio block has 2.9 ms:
+
+| Case | CPU | Slowest block |
+| --- | --- | --- |
+| A 16-instrument song on all 14 parts, matched sounds | 3.1% | 0.27 ms |
+| Stress: all 14 parts playing 4-note chords, non-stop | 8.1% | 0.40 ms |
+| Nothing playing | 0.5% | 0.04 ms |
 
 ## To do
 
@@ -306,8 +328,6 @@ purpose, both upstream as here.
   what, the instruments' sounds). Link it from the game's page.
 - [ ] **A screen for the device's settings**, separate from the game. The device's own screens (GLO, the rack, …)
   are not used; the page draws the screen (the chord wheel, the rhythm ring), Melodee's only under **Advanced**.
-- [ ] **Stop drawing Melodee's screen while Advanced is closed.** It is hidden then, but the engine still draws it and
-  the worklet sends its 115 KB frame 30 times a second.
 - [ ] **Remove the device's unused screens** (sequencer, mixer, song …) from the build. Everything is set on the
   page. Until then they still work under **Advanced**, at 14 parts too (memory-safe, but laid out for 8).
 - [ ] **More sound engines** (possibly). Engines from other projects plug in as folders in `engines/` (so far x0x's 303

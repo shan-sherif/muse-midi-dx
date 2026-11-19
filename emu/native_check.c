@@ -104,6 +104,7 @@ __attribute__((constructor)) static void native_check(void)
         else if (rnd(4) == 0u) { uint32_t sl = rnd(RACK_SLOTS + 1u), f = rnd(7); int32_t v = (int32_t)rnd(200) - 70; uint32_t tp = rnd(NPART), k = 3u + rnd(4); int32_t tv = (int32_t)rnd(140);
                                   TR("rack slot %u field %u = %d; part %u send %u = %d", (unsigned)sl, (unsigned)f, (int)v, (unsigned)tp, (unsigned)k, (int)tv);
                                   game_rack_set(sl, f, v); game_tparam_set(tp, k, tv); }
+        else if (rnd(60) == 0u) { uint32_t on = rnd(3) != 0u; TR("Melodee's screen %s", on ? "on" : "off"); game_screen(on); }
         else if (rnd(40) == 0u) { uint32_t e = rnd(NENGINES), tp = rnd(NPART), k = rnd(64); if (eng_ok(e)) { TR("part %u <- engine %u preset %u", (unsigned)tp, (unsigned)e, (unsigned)k); game_load_track(tp, e, k); } }
         else { uint32_t ch = rnd(NPART + 2u), on = rnd(4), note = 24u + rnd(80), vel = 1u + rnd(126); TR("midi ch %u %s %u vel %u", (unsigned)ch + 1u, on ? "on" : "off", (unsigned)note, (unsigned)vel);
                web_midi_in((on ? 0x90u : 0x80u) | ch, note, vel); }

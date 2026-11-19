@@ -171,3 +171,9 @@ EXPORT(game_init) void game_init(void) { settings_drumch = 0; }
 EXPORT(game_scope_ptr) const int16_t *game_scope_ptr(void) { return &part_scope[0][0]; }
 EXPORT(game_scope_len) uint32_t game_scope_len(void) { return PART_SCOPE_N; }
 EXPORT(game_scope_pos) uint32_t game_scope_pos(void) { return part_scope_pos; }
+/* Melodee's screen drawn (1) or not (0: the page shows its own; patches/07-screen-switch.patch); on again: drawn whole */
+EXPORT(game_screen) void game_screen(uint32_t on)
+{
+    if (on && !screen_draw) ui.force = 1;
+    screen_draw = (uint8_t)(on != 0u);
+}

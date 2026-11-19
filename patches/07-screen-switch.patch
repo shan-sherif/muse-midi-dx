@@ -1,0 +1,28 @@
+--- a/web/emu/melodee_web.c	2026-11-19 16:59:54
++++ b/web/emu/melodee_web.c	2026-11-19 16:59:54
+@@ -25,6 +25,10 @@
+ #define EXPORT(name) __attribute__((used, export_name(#name)))
+ 
+ static uint32_t now_ms, fb_gen;
++/* (muse-midi-dx: Melodee's screen drawn, or not: the page draws its own screens and shows Melodee's only while its
++ * Advanced panel is open; off, a frame runs the LEDs alone, no ui_draw and no compare of the frame. emu/game_glue.c:
++ * game_screen) */
++static uint8_t screen_draw = 1u;
+ static uint16_t fb_seen[240 * 240];
+ 
+ EXPORT(web_boot) void web_boot(uint32_t master)       /* main.c melodee_init, as the UI tests power on */
+@@ -108,12 +112,14 @@
+     ui_input();
+     if (now_ms % 15u == 0u) {
+         ui_leds();
++        if (!screen_draw) goto sound;                  /* (muse-midi-dx) */
+         ui_draw();
+         if (memcmp(fb_seen, host_screen, sizeof fb_seen)) {
+             memcpy(fb_seen, host_screen, sizeof fb_seen);
+             fb_gen++;
+         }
+     }
++sound:
+     owed += FS;
+     while (owed >= 1000u * CTL) {
+         int32_t o[2 * CTL];

@@ -80,7 +80,8 @@ class MelodeeGame extends AudioWorkletProcessor {
       this.timed = this.timed.filter((t) => !mine(t));
     } else if (m.type === "preset") ex.game_load(m.engine >>> 0, m.preset >>> 0);
     else if (m.type === "view") ex.game_view();
-    else if (m.type === "scope") this.scopeOn = !!m.on;
+    else if (m.type === "scope") this.scopeOn = !!m.on;   // (the waves shown: their data in the frames)
+    else if (m.type === "screen") { if (ex.game_screen) ex.game_screen(m.on ? 1 : 0); }   // (Melodee's screen drawn, or not)
     else if (m.type === "bpm") ex.game_set_bpm(Math.round(m.bpm) >>> 0);
     else if (m.type === "palette") ex.game_palette_set(m.index >>> 0);
     else if (m.type === "tparam") ex.game_tparam_set(m.track >>> 0, m.k >>> 0, m.v | 0);

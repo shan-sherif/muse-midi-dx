@@ -609,6 +609,7 @@ function onWorklet(e) {
     setupSounds(m.engines, m.categories);
     restoreSettings(m);
     send({ type: "scope", on: wavesOn });
+    showScreen();                                       // (Melodee's screen: drawn only with Advanced open)
     applySongSounds();                                  // (the song's instruments' sounds, over the saved ones)
     if (!$("setup").hidden) renderPartSounds();
     sentBpm = 0;
@@ -810,11 +811,13 @@ const wheel = new ChordWheel($("wheel"), {
   bpm: () => sentBpm,
   sound: () => engineOf(0),
 });
-// which screen shows: the wheel (Keyboard), the ring (Drums, Both); Advanced open: the device's own (its buttons work it)
+// which screen shows: the wheel (Keyboard), the ring (Drums, Both); Advanced open: the device's own (its buttons work it).
+// Melodee draws its screen only then (patches/07-screen-switch.patch): no drawing, no 115 KB frames, the rest of the time
 function showScreen() {
   const device = document.querySelector("details.advanced").open;
   $("wheel").hidden = device || inst !== "keys";
   $("ring").hidden = device || inst === "keys";
+  send({ type: "screen", on: device });
 }
 document.querySelector("details.advanced").addEventListener("toggle", showScreen);
 hudReady = true;
@@ -980,7 +983,11 @@ function chartNow() {
       const m = move(n, p.drum);
       if (!ok(m)) continue;
       if (who === "you") (keysOn() ? notes : accomp).push(keysOn() ? m : { ...m, ch: 1 });   // (part 1)
-      else if (who === "drums") (drumsOn() ? drums : accomp).push(drumsOn() ? m : { ...m, ch: 2 });   // (part 2)
+      else if (who === "drums") {                        // (part 2)
+        // a kit's note no lane takes (tambourine, cowbell, claps, shakers, congas …): the device plays it, unscored
+        if (drumsOn() && !(p.drum && laneOf(m.p) < 0)) drums.push(m);
+        else accomp.push({ ...m, ch: 2 });
+      }
       else accomp.push({ ...m, ch: who });
     }
   });
