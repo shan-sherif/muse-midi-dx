@@ -1,0 +1,580 @@
+diff -ruN --exclude=build melodee/firmware/src/core.h /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/core.h
+--- a/firmware/src/core.h	2026-11-19 12:02:09
++++ b/firmware/src/core.h	2026-11-19 11:52:56
+@@ -16,11 +16,12 @@
+ /* ------------------------------------------------------------ sizes --- */
+ #define NVOICE 16                /* voice slots per part (FM6 plays Dexed's 16) */
+ #define NPOLY 8                  /* the voices of an engine without its own cap (its per-voice state: engines.c eng_state) */
+-#define NPART 6                  /* synth parts: tracks 1..6 (muse-midi-dx: 6; the FM-1 had 4) */
++#define NPART 14                 /* synth parts: tracks 1..14 (muse-midi-dx: 14, keys, drums and 12 instruments; the FM-1
++                                  * had 4). The sequencer (patterns, motion, recording) keeps to the first 4..8 */
+ #define NVIEW 4u                 /* muse-midi-dx: the tracks a screen shows at once (the FM-1's layout: four rows, four
+                                   * knobs, four mute keys); the screens page through 1..4, 5..8 */
+ #ifndef VBUDGET
+-#define VBUDGET (MELODEE_RAM_AUDIO ? 18u : 48u)   /* (muse-midi-dx, in the browser: 48 for six parts) */ /* shared weighted voices; RAM profile uses 18 with CPU1 online
++#define VBUDGET (MELODEE_RAM_AUDIO ? 18u : 112u)  /* (muse-midi-dx, in the browser: 112 for fourteen parts) */ /* shared weighted voices; RAM profile uses 18 with CPU1 online
+                                                  * at 360 MHz (voice.c voice_budget: scaled with a kept 320) */
+ #endif
+ #ifndef MELODEE_ADMISSION
+@@ -31,7 +32,7 @@
+ #define MELODEE_AUDIO_BENCH 0 /* laboratory fixed-voice admission bypass; never a release default */
+ #endif
+ #ifndef NMIDI
+-#define NMIDI 2                  /* MIDI-only tracks: tracks 7..8 (muse-midi-dx: NTRK stays 8) */
++#define NMIDI 1                  /* MIDI-only tracks: track 15 (muse-midi-dx: NTRK 15, the most a note's owner nibble holds) */
+ #endif
+ #define NTRK (NPART + NMIDI)     /* tracks: the parts, then the MIDI-only ones (a project's first NPART on its FUN wire) */
+ /* Shared with engine-buffer placement: the queued recorder needs one runtime
+@@ -53,7 +54,7 @@
+ /* Patterns: 16 on each part (tracks 1..4), 8 on each MIDI-only track; arrays are NPAT wide. Records written before
+  * 16 kept 8 a track (NPAT_V1: pattern_store.c reads them with that layout). */
+ #ifndef NPAT
+-#define NPAT 16u
++#define NPAT 8u                  /* muse-midi-dx: 8 (16 on the FM-1): NTRK * NPAT fits the 7-bit recorded-note ids */
+ #endif
+ #define NPAT_MIDI 8u
+ #define PROJ_SLOTS 32u                   /* projects: 1..32, an empty one owns no flash (storage.c) */
+diff -ruN --exclude=build melodee/firmware/src/cz_bank.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/cz_bank.c
+--- a/firmware/src/cz_bank.c	2026-11-11 11:12:03
++++ b/firmware/src/cz_bank.c	2026-11-19 11:52:56
+@@ -81,7 +81,7 @@
+         uint8_t raw[CZ_BYTES];int ok=1;
+         if(!t->p[P_E1])cz_patch_init(raw);
+         else ok=cz_user_bank_read && !cz_user_bank_read((uint32_t)t->p[P_E0],(uint32_t)t->p[P_E1]-1u,raw);
+-        if(ok){fm1_irq_off();memcpy(cz_patch_of(k)->raw,raw,CZ_BYTES);panic_req|=(uint8_t)(1u<<k);fm1_irq_on();cz_compare_drop(k);}
++        if(ok){fm1_irq_off();memcpy(cz_patch_of(k)->raw,raw,CZ_BYTES);panic_req|=(uint32_t)(1u<<k);fm1_irq_on();cz_compare_drop(k);}
+         cz_user_pick[k]=(uint16_t)pick;
+     }
+ }
+diff -ruN --exclude=build melodee/firmware/src/editor_cz.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/editor_cz.c
+--- a/firmware/src/editor_cz.c	2026-11-11 11:12:03
++++ b/firmware/src/editor_cz.c	2026-11-19 11:52:56
+@@ -45,7 +45,7 @@
+         } else if (!rc) {
+             track_t *t=&trk[index];
+             load_begin(t,UNDO_SOUND);
+-            panic_req |= (uint8_t)(1u<<index);
++            panic_req |= (uint32_t)(1u<<index);
+             fm1_irq_off();
+             memcpy(cz_patch_of(index)->raw,raw,CZ_BYTES); t->eng_req=ENGI_CZ;
+             for (uint32_t i=P_E0;i<P_COUNT;i++) t->p[i]=param_desc_of(ENGI_CZ,i)->def;
+diff -ruN --exclude=build melodee/firmware/src/editor_prophet.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/editor_prophet.c
+--- a/firmware/src/editor_prophet.c	2026-11-11 11:12:03
++++ b/firmware/src/editor_prophet.c	2026-11-19 11:52:56
+@@ -4,7 +4,7 @@
+  * F0/F7), 2 field edit (offset,value), 3 printable name, 4 native dump send. */
+ static void p5_accept_patch(uint32_t tr,const p5_patch_t *patch)
+ {
+-    track_t *t=&trk[tr];load_begin(t,UNDO_SOUND);panic_req|=(uint8_t)(1u<<tr);
++    track_t *t=&trk[tr];load_begin(t,UNDO_SOUND);panic_req|=(uint32_t)(1u<<tr);
+     fm1_irq_off();p5_patch[tr]=*patch;p5_ready[tr]=1;t->eng_req=ENGI_PROPHET;
+     t->preset=t->user=t->user_native=0;
+     for(uint32_t i=0;i<8u;i++)t->p[P_E0+i]=ENGINES[ENGI_PROPHET]->edit[i].def;
+diff -ruN --exclude=build melodee/firmware/src/engines.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/engines.c
+--- a/firmware/src/engines.c	2026-11-19 12:02:09
++++ b/firmware/src/engines.c	2026-11-19 11:52:56
+@@ -238,8 +238,12 @@
+ /* the parts at power-on and in a new song (engine, preset; the steps empty): poly, bass, lead, drums. IT'S A
+  * PROPHET 5, FM6 SOLID BASS, CZ-1 SYNTH.LEAD 1, 808 KIT (until 2026-10-16: PROPHET FUNK BASS II, FM6 PAD, SID INIT
+  * SID, 808 KIT) */
+-/* muse-midi-dx: six parts, the keys on 1 and the drums on 2 (MIDI channels 1 and 2), then bass, lead, a poly synth and strings */
+-static const uint8_t TRK_DEF[NPART][2] = {{ENGI_CZ, 25}, {ENGI_DRUM, 0}, {ENGI_FM6, 10}, {ENGI_CZ, 52}, {ENGI_PROPHET, 1}, {ENGI_FM6, 15}};
++/* muse-midi-dx: six parts, the keys on 1 and the drums on 2 (MIDI channels 1 and 2), then the instruments */
++/* (12 instruments: SOLID BASS, SYNTH.LEAD 1, a Prophet, STRINGS, PAD, BRASS SECT, ORGAN, FLUTE, PLUCK, BELL, HARP, MARIMBA;
++ * a loaded song picks its own: web/app.js) */
++static const uint8_t TRK_DEF[NPART][2] = {{ENGI_CZ, 25}, {ENGI_DRUM, 0}, {ENGI_FM6, 10}, {ENGI_CZ, 52}, {ENGI_PROPHET, 1}, {ENGI_FM6, 15},
++                                         {ENGI_FM6, 4}, {ENGI_FM6, 9}, {ENGI_FM6, 6}, {ENGI_FM6, 20}, {ENGI_FM6, 7}, {ENGI_FM6, 1},
++                                         {ENGI_FM6, 18}, {ENGI_FM6, 5}};
+ /* track k's power-on engine and preset: TRK_DEF's, a MIDI-only track the MIDI Track's */
+ static uint32_t trk_def_engine(uint32_t k) { return k < NPART ? TRK_DEF[k][0] : ENGI_MIDI; }
+ static uint32_t trk_def_preset(uint32_t k) { return k < NPART ? TRK_DEF[k][1] : 0u; }
+diff -ruN --exclude=build melodee/firmware/src/midi_control.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/midi_control.c
+--- a/firmware/src/midi_control.c	2026-11-11 11:12:03
++++ b/firmware/src/midi_control.c	2026-11-19 11:52:56
+@@ -8,7 +8,8 @@
+  * share it (last controller wins). Drum hits ignore bend and sustain. CC1 keeps the existing matrix routing. */
+ typedef struct {
+     int16_t bend;                           /* signed 14-bit value, zero = centre */
+-    uint8_t wheel, pedal, targets;
++    uint8_t wheel, pedal;
++    uint32_t targets;                        /* (muse-midi-dx: 32 bits, 15 tracks) */
+     uint8_t owned[NTRK];                    /* held/pedal notes per track, at most 128 per channel */
+     uint8_t ready, semis, cents;
+     uint8_t rpn_msb, rpn_lsb;
+@@ -112,7 +113,7 @@
+     if (id) {
+         midi_owners[id - 1u]--;
+         if (!--midi_ch[ch].owned[id - 1u])
+-            midi_ch[ch].targets &= (uint8_t)~(1u << (id - 1u));
++            midi_ch[ch].targets &= ~(1u << (id - 1u));
+     }
+     if (id) {
+         step_midi_edge(id - 1u, 0, 0, ch, note);
+@@ -187,7 +188,7 @@
+         midi_expression(t, c);
+         if (!midi_play(t, ch, note, vel))           /* (a note the layout silences: no owner) */
+             return;
+-        c->targets |= (uint8_t)(1u << trk_index(t));
++        c->targets |= 1u << trk_index(t);
+         mn_set(ch, note, trk_index(t) + 1u);
+         uint32_t mask = 1u << (note & 31u);
+         if (midi_event_source == 2u) midi_owner_trs[ch][note >> 5] |= mask;
+@@ -238,7 +239,7 @@
+         for (note = 0; note < 128u; note++)
+             if ((mn_get(ch, note) & 0x7Fu) == track + 1u)
+                 mn_set(ch, note, 0);
+-        midi_ch[ch].targets &= (uint8_t)~(1u << track);
++        midi_ch[ch].targets &= ~(1u << track);
+         midi_ch[ch].owned[track] = 0;
+     }
+     midi_owners[track] = 0;
+diff -ruN --exclude=build melodee/firmware/src/params.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/params.c
+--- a/firmware/src/params.c	2026-11-19 12:02:09
++++ b/firmware/src/params.c	2026-11-19 11:52:56
+@@ -316,7 +316,7 @@
+     [G_MFX3CHAR] = PD("CHAR", F_PCT, 0, 127, 64),
+     [G_FXRETURN] = PD("RETURN", F_PCT, 0, 127, 100),
+     [G_FXMODE] = {"MODE", F_ENUM, 0, 1, 0, (const char *const []){"CHAIN", "SPLIT"}, 0},
+-    [G_BUDGET] = {"BUDGET", F_INT, 8, 96, VOICE_BUDGET_DEFAULT, 0, "pts"},
++    [G_BUDGET] = {"BUDGET", F_INT, 8, 224, VOICE_BUDGET_DEFAULT, 0, "pts"},
+     [G_MFXTONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
+     [G_MFX2TONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
+     [G_MFX3TONE] = PD("TONE", F_TONE, -FX_TONE_MAX, FX_TONE_MAX, 0),
+diff -ruN --exclude=build melodee/firmware/src/pattern_store.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/pattern_store.c
+--- a/firmware/src/pattern_store.c	2026-11-11 11:12:03
++++ b/firmware/src/pattern_store.c	2026-11-19 11:55:49
+@@ -8,12 +8,16 @@
+  * steps use exactly 64 bits: four 7-bit notes, n/time + recorded marker (4 bits), flags (2), velocity (7),
+  * hits/accents (8 each), probability (7). Only FBKK (written since Melodee 1.0.0) is read; older banks were
+  * rewritten by 1.2's boot pass. */
+-/* FBKL: the same extent and FUN record, then all NTRK tracks: written when more than PROJ_TRK tracks are in use (FBKK
++/* FBKL: the same extent and FUN record, then all BANK_NTRK tracks: written when more than PROJ_TRK tracks are in use (FBKK
+  * otherwise, which firmware before the MIDI-only tracks reads too). Its tail: each track's active bank, every bank's
+  * timing, the song's columns, the motion tags, the FM6 function settings, the timed notes' directory past the FUN
+  * record's (owners PROJ_TRK * NPAT ..), each MIDI-only track's parameters and MPC octave; then the banks the FUN record
+  * does not hold, sparse: per track a byte (bit b: bank b follows), per bank its 64-bit step mask and the steps set in
+  * it (step_packed_put); the rest zero. Music that does not fit is not written (PROJECT FULL). */
++/* muse-midi-dx: the saved bank keeps the FM-1's eight tracks (four parts, four MIDI-only), whatever NTRK is here; tracks
++ * past them are not saved (nothing is saved in the browser) */
++#define BANK_NTRK 8u
++#define BANK_NMIDI (BANK_NTRK - PROJ_TRK)
+ #define BANK_MAGIC 0x4B4B4246u                  /* FBKK: sound controls and full-precision per-hit pitch/length */
+ #define BANKL_MAGIC 0x4C4B4246u                 /* FBKL: every track, the banks sparse */
+ #define BANKM_MAGIC 0x4D4B4246u                 /* FBKM: FBKL plus 64 sections and explicit rests */
+@@ -23,7 +27,7 @@
+                                                  * the song and punch blocks, song byte 2 = sounds follow. Before it, every
+                                                  * format kept NPAT_V1 a track: those layouts read below */
+ #define BANKQ_MAGIC 0x514B4246u                 /* FBKQ: FBKP plus per-pattern sound IDs after the sound pool */
+-#define BANKQ_PATTERN_BYTES (NTRK * NPAT)
++#define BANKQ_PATTERN_BYTES (BANK_NTRK * NPAT)
+ #define BANK_STORE_SIZE PROJ_BANK_BYTES
+ #define BANK_PROJ_SIZE PROJ_STORE_SIZE
+ #define BANK_STEP_SIZE 8u
+@@ -36,25 +40,25 @@
+ #define BANK_FN_OFF (BANK_MOTION_OFF + MOTION_MAX)
+ #define BANK_FN_MAGIC 0x31364E46u
+ _Static_assert(BANK_FN_OFF + 4u + PROJ_TRK * FM6_NFN <= BANK_STORE_SIZE - 4u, "bank project extent");
+-#define BANKL_TIMING_OFF (BANK_ACTIVE_OFF + NTRK)
+-#define BANKL_CHAIN_OFF (BANKL_TIMING_OFF + NTRK * NPAT_V1 * BANK_TIME_SIZE)
+-#define BANKL_MOTION_OFF (BANKL_CHAIN_OFF + CHAIN_LEGACY_ROWS * NTRK)
++#define BANKL_TIMING_OFF (BANK_ACTIVE_OFF + BANK_NTRK)
++#define BANKL_CHAIN_OFF (BANKL_TIMING_OFF + BANK_NTRK * NPAT_V1 * BANK_TIME_SIZE)
++#define BANKL_MOTION_OFF (BANKL_CHAIN_OFF + CHAIN_LEGACY_ROWS * BANK_NTRK)
+ #define BANKL_FN_OFF (BANKL_MOTION_OFF + MOTION_MAX)
+ #define BANKL_REC_OFF (BANKL_FN_OFF + 4u + PROJ_TRK * FM6_NFN)
+ #define BANKL_TRK_OFF (BANKL_REC_OFF + PROJ_REC_DIR_BYTES)
+ #define BANKL_TRK_BYTES (P_COUNT + 1u)                  /* the parameters + 64, the MPC octave + 3 */
+-#define BANKL_STEPS_OFF (BANKL_TRK_OFF + NMIDI * BANKL_TRK_BYTES)
+-#define BANKM_SONG_BYTES (4u + CHAIN_ROWS * (NTRK + 1u))
++#define BANKL_STEPS_OFF (BANKL_TRK_OFF + BANK_NMIDI * BANKL_TRK_BYTES)
++#define BANKM_SONG_BYTES (4u + CHAIN_ROWS * (BANK_NTRK + 1u))
+ #define BANKN_FX_BYTES (CHAIN_ROWS * CHAIN_FX_EVENTS * 3u)
+ _Static_assert(sizeof(chain_fx_t) == 3u, "song punch wire event");
+-#define BANKO_HEAD_BYTES (4u + CHAIN_ROWS * NTRK)
+-#define BANKP_REC_BYTES ((NTRK * NPAT * 11u + 7u) / 8u)  /* FBKP: every owner's timed-note count (the FUN record's: 0) */
+-#define BANKP_CHAIN_OFF (BANKL_TIMING_OFF + NTRK * NPAT * BANK_TIME_SIZE)
+-#define BANKP_MOTION_OFF (BANKP_CHAIN_OFF + CHAIN_LEGACY_ROWS * NTRK)
++#define BANKO_HEAD_BYTES (4u + CHAIN_ROWS * BANK_NTRK)
++#define BANKP_REC_BYTES ((BANK_NTRK * NPAT * 11u + 7u) / 8u)  /* FBKP: every owner's timed-note count (the FUN record's: 0) */
++#define BANKP_CHAIN_OFF (BANKL_TIMING_OFF + BANK_NTRK * NPAT * BANK_TIME_SIZE)
++#define BANKP_MOTION_OFF (BANKP_CHAIN_OFF + CHAIN_LEGACY_ROWS * BANK_NTRK)
+ #define BANKP_FN_OFF (BANKP_MOTION_OFF + MOTION_MAX)
+ #define BANKP_REC_OFF (BANKP_FN_OFF + 4u + PROJ_TRK * FM6_NFN)
+ #define BANKP_TRK_OFF (BANKP_REC_OFF + BANKP_REC_BYTES)
+-#define BANKP_STEPS_OFF (BANKP_TRK_OFF + NMIDI * BANKL_TRK_BYTES)
++#define BANKP_STEPS_OFF (BANKP_TRK_OFF + BANK_NMIDI * BANKL_TRK_BYTES)
+ /* the FBKL family's layout: FBKL..FBKO (NPAT_V1 a track, one mask byte) or FBKP (NPAT, two) */
+ typedef struct { uint32_t npat, timing, chain, motion, fn, rec, recn, trk, steps, mask; } bank_lay_t;
+ static const bank_lay_t BANK_LAY[2] = {
+@@ -71,9 +75,9 @@
+ 
+ static uint32_t bank_pattern_off(void) { return bank_sound_off() + bank_sound_bytes; }
+ static uint32_t bank_steps_off(void) { return BL.steps + (bank_song64 ? BANKM_SONG_BYTES : 0u) + (bank_songfx ? BANKN_FX_BYTES : 0u) + bank_sound_bytes + (bank_patterns ? BANKQ_PATTERN_BYTES : 0u); }
+-_Static_assert(BANKL_STEPS_OFF + NTRK <= BANK_STORE_SIZE - 4u && (NTRK - PROJ_TRK) * NPAT_V1 <= 32u && NSTEP == 64u,
++_Static_assert(BANKL_STEPS_OFF + BANK_NTRK <= BANK_STORE_SIZE - 4u && (BANK_NTRK - PROJ_TRK) * NPAT_V1 <= 32u && NSTEP == 64u,
+                "FBKL: its fixed fields, one more directory of owners, a 64-bit step mask");
+-_Static_assert(BANKP_STEPS_OFF + BANKM_SONG_BYTES + BANKN_FX_BYTES + 2u * NTRK <= BANK_STORE_SIZE - 4u && NPAT <= 16u,
++_Static_assert(BANKP_STEPS_OFF + BANKM_SONG_BYTES + BANKN_FX_BYTES + 2u * BANK_NTRK <= BANK_STORE_SIZE - 4u && NPAT <= 16u,
+                "FBKP: its fixed fields and two mask bytes a track");
+ #define BT(off) ((off) - BANK_ACTIVE_OFF)               /* an offset into the tail */
+ static uint8_t bank_too_full;                           /* the music did not fit an FBKL record */
+@@ -150,7 +154,7 @@
+     uint32_t pos = BT(bank_steps_off()), f = motion_guard();
+     step_t empty = {{0}, 0, ST_REST};
+     memset(raw, 0, BANK_TAIL_SIZE);
+-    if (pos + NTRK > BANK_TAIL_SIZE - 4u) { bank_too_full = 1; motion_unguard(f); return 0; }
++    if (pos + BANK_NTRK > BANK_TAIL_SIZE - 4u) { bank_too_full = 1; motion_unguard(f); return 0; }
+     if (bank_sounds) {
+         uint8_t *out = raw + bank_sound_off();
+         out[0] = bank_sound_count; out[1] = P_COUNT;
+@@ -160,15 +164,15 @@
+             if (!sound || !song_sound_valid(sound)) { motion_unguard(f); return 0; }
+             memcpy(out + BANKO_HEAD_BYTES + j * sizeof *sound, sound, sizeof *sound);
+         }
+-        for (uint32_t r = 0; r < chain_config.count; r++) for (uint32_t k = 0; k < NTRK; k++) {
++        for (uint32_t r = 0; r < chain_config.count; r++) for (uint32_t k = 0; k < BANK_NTRK; k++) {
+             uint32_t src = cap_map(k), id = src < NTRK ? chain_config.sound[r][src] : 0;
+             if (!id) continue;
+-            for (uint32_t j = 0; j < bank_sound_count; j++) if (bank_sound_ids[j] == id) out[4u + r * NTRK + k] = (uint8_t)(j + 1u);
++            for (uint32_t j = 0; j < bank_sound_count; j++) if (bank_sound_ids[j] == id) out[4u + r * BANK_NTRK + k] = (uint8_t)(j + 1u);
+         }
+     }
+     if (bank_patterns) {
+         uint8_t *out = raw + bank_pattern_off();
+-        for (uint32_t k = 0; k < NTRK; k++) for (uint32_t b = 0; b < NPAT; b++) {
++        for (uint32_t k = 0; k < BANK_NTRK; k++) for (uint32_t b = 0; b < NPAT; b++) {
+             uint32_t src = cap_map(k), id = src < NTRK ? pattern_sound[src][b] : 0;
+             for (uint32_t j = 0; id && j < bank_sound_count; j++)
+                 if (bank_sound_ids[j] == id) out[k * NPAT + b] = (uint8_t)(j + 1u);
+@@ -180,14 +184,14 @@
+         song[1] = chain_config.rsv[CHAIN_LOOP];
+         song[2] = bank_p16 && bank_sounds;              /* (FBKP: sounds follow) */
+         for (uint32_t r = 0; r < CHAIN_ROWS; r++) {
+-            song[4u + r * (NTRK + 1u)] = chain_config.row[r].repeat;
+-            for (uint32_t k = 0; k < NTRK; k++)
+-                song[5u + r * (NTRK + 1u) + k] = cap_map(k) < NTRK ? chain_patterns[r][cap_map(k)] : 0u;
++            song[4u + r * (BANK_NTRK + 1u)] = chain_config.row[r].repeat;
++            for (uint32_t k = 0; k < BANK_NTRK; k++)
++                song[5u + r * (BANK_NTRK + 1u) + k] = cap_map(k) < NTRK ? chain_patterns[r][cap_map(k)] : 0u;
+         }
+     }
+     if (bank_songfx) memcpy(raw + BT(BL.steps) + BANKM_SONG_BYTES, chain_config.fx, BANKN_FX_BYTES);
+-    if (pos + NTRK * BL.mask > BANK_TAIL_SIZE - 4u) { bank_too_full = 1; motion_unguard(f); return 0; }
+-    for (uint32_t k = 0; k < NTRK; k++) {
++    if (pos + BANK_NTRK * BL.mask > BANK_TAIL_SIZE - 4u) { bank_too_full = 1; motion_unguard(f); return 0; }
++    for (uint32_t k = 0; k < BANK_NTRK; k++) {
+         uint32_t src = cap_map(k), active = src < NTRK ? trk[src].pattern : 0u, at = pos;
+         pos += BL.mask;
+         track_t *t = src < NTRK ? &trk[src] : 0;
+@@ -229,7 +233,7 @@
+         }
+         for (uint32_t r = 0; r < CHAIN_LEGACY_ROWS; r++) {
+             uint32_t p = t ? chain_patterns[r][src] : 0u;
+-            raw[BT(BL.chain) + r * NTRK + k] = (uint8_t)(p < BL.npat ? p : 0u);
++            raw[BT(BL.chain) + r * BANK_NTRK + k] = (uint8_t)(p < BL.npat ? p : 0u);
+         }
+     }
+     memcpy(raw + BT(BL.motion), cap_motion_tags, sizeof cap_motion_tags);
+@@ -249,7 +253,7 @@
+  * (pattern.c pattern_fits) */
+ static uint32_t pattern_room(void)
+ {
+-    uint32_t fixed = BT(BANKP_STEPS_OFF) + BANKM_SONG_BYTES + BANKN_FX_BYTES + 2u * NTRK + 4u;
++    uint32_t fixed = BT(BANKP_STEPS_OFF) + BANKM_SONG_BYTES + BANKN_FX_BYTES + 2u * BANK_NTRK + 4u;
+     if (pattern_sounds_any()) fixed += BANKQ_PATTERN_BYTES;
+     if (song_sound_count) fixed += BANKO_HEAD_BYTES + song_sound_count * (uint32_t)sizeof(song_sound_t);
+     return fixed < BANK_TAIL_SIZE ? BANK_TAIL_SIZE - fixed : 0u;
+@@ -261,7 +265,7 @@
+     if (cap_tracks() > PROJ_TRK || pattern_sounds_any()) return 0;
+     for (uint32_t k = 0; k < PROJ_TRK; k++) {
+         uint32_t src = cap_map(k);
+-        if (src >= NTRK) continue;
++        if (src >= BANK_NTRK) continue;
+         if (trk[src].pattern >= NPAT_V1) return 0;
+         for (uint32_t b = NPAT_V1; b < trk_npat(src); b++) if (pattern_bank_cost(src, b)) return 0;
+     }
+@@ -376,10 +380,10 @@
+         uint32_t count = in[0], size = in[2] | (uint32_t)in[3] << 8;
+         if (!count || count > CHAIN_SOUNDS || in[1] != P_COUNT || size != sizeof(song_sound_t)) return 0;
+         bank_sound_bytes = BANKO_HEAD_BYTES + count * size;
+-        if (bank_sound_off() + bank_sound_bytes + (bank_patterns ? BANKQ_PATTERN_BYTES : 0u) + NTRK * BL.mask > BANK_TAIL_SIZE - 4u) return 0;
++        if (bank_sound_off() + bank_sound_bytes + (bank_patterns ? BANKQ_PATTERN_BYTES : 0u) + BANK_NTRK * BL.mask > BANK_TAIL_SIZE - 4u) return 0;
+         uint8_t used[CHAIN_SOUNDS] = {0};
+-        for (uint32_t r = 0; r < CHAIN_ROWS; r++) for (uint32_t k = 0; k < NTRK; k++) {
+-            uint32_t id = in[4u + r * NTRK + k];
++        for (uint32_t r = 0; r < CHAIN_ROWS; r++) for (uint32_t k = 0; k < BANK_NTRK; k++) {
++            uint32_t id = in[4u + r * BANK_NTRK + k];
+             if (id > count || (r >= raw[BT(BL.steps)] && id)) return 0;
+             if (id) {
+                 const song_sound_t *sound = (const song_sound_t *)(in + BANKO_HEAD_BYTES + (id - 1u) * size);
+@@ -390,7 +394,7 @@
+         if (bank_patterns) {
+             const uint8_t *ids = raw + bank_pattern_off();
+             uint32_t any = 0;
+-            for (uint32_t k = 0; k < NTRK; k++) for (uint32_t b = 0; b < NPAT; b++) {
++            for (uint32_t k = 0; k < BANK_NTRK; k++) for (uint32_t b = 0; b < NPAT; b++) {
+                 uint32_t id = ids[k * NPAT + b];
+                 if (id > count || (b >= trk_npat(k) && id)) return 0;
+                 if (!id) continue;
+@@ -410,13 +414,13 @@
+         if (song[0] > CHAIN_ROWS || song[1] > 1u || (song[2] && !bank_p16) || song[3] ||
+             proj_scratch.chain.count != (song[0] < CHAIN_LEGACY_ROWS ? song[0] : CHAIN_LEGACY_ROWS)) return 0;
+         for (uint32_t r = 0; r < CHAIN_ROWS; r++) {
+-            uint32_t rep = song[4u + r * (NTRK + 1u)];
++            uint32_t rep = song[4u + r * (BANK_NTRK + 1u)];
+             if (!rep || rep > 16u) return 0;
+-            for (uint32_t k = 0; k < NTRK; k++) {
+-                uint32_t p = song[5u + r * (NTRK + 1u) + k], v = bank_song_value(p);
++            for (uint32_t k = 0; k < BANK_NTRK; k++) {
++                uint32_t p = song[5u + r * (BANK_NTRK + 1u) + k], v = bank_song_value(p);
+                 if (v != CHAIN_REST && v != CHAIN_HOLD && v >= (bank_p16 ? trk_npat(k) : NPAT_V1)) return 0;
+-                if (v == CHAIN_HOLD && (!r || bank_song_value(song[5u + (r-1u) * (NTRK + 1u) + k]) == CHAIN_REST)) return 0;
+-                if (r < CHAIN_LEGACY_ROWS && raw[BT(BL.chain) + r * NTRK + k] != (p < BL.npat ? p : 0u)) return 0;
++                if (v == CHAIN_HOLD && (!r || bank_song_value(song[5u + (r-1u) * (BANK_NTRK + 1u) + k]) == CHAIN_REST)) return 0;
++                if (r < CHAIN_LEGACY_ROWS && raw[BT(BL.chain) + r * BANK_NTRK + k] != (p < BL.npat ? p : 0u)) return 0;
+                 if (!k && r < proj_scratch.chain.count &&
+                     (proj_scratch.chain.row[r].repeat != rep || proj_scratch.chain.row[r].slot != (p < BL.npat ? p : 0u))) return 0;
+             }
+@@ -430,7 +434,7 @@
+             if (!chain_fx_valid(&e) || (r >= count && e.fx)) return 0;
+         }
+     }
+-    for (uint32_t k = 0; k < NTRK; k++) {
++    for (uint32_t k = 0; k < BANK_NTRK; k++) {
+         uint32_t active = raw[k], present = bank_present(raw, pos), have = bank_p16 ? trk_npat(k) : NPAT_V1;
+         pos += BL.mask;
+         if (active >= have || (present >> have) ||
+@@ -456,7 +460,7 @@
+         }
+     }
+     for (; pos < BANK_TAIL_SIZE - 4u; pos++) if (raw[pos]) return 0;
+-    for (uint32_t i = 0; i < CHAIN_LEGACY_ROWS * NTRK; i++) if (raw[BT(BL.chain) + i] >= BL.npat) return 0;
++    for (uint32_t i = 0; i < CHAIN_LEGACY_ROWS * BANK_NTRK; i++) if (raw[BT(BL.chain) + i] >= BL.npat) return 0;
+     if (!bank_tail_common(raw, BL.motion, BL.fn)) return 0;
+     /* Reserve before project_restore_runtime replaces any active music. The
+      * old pool's bytes remain intact when validation or allocation fails. */
+@@ -467,7 +471,7 @@
+     }
+     if (bank_patterns) {
+         uint32_t f = motion_guard();
+-        int ok = resource_get(RES_SONG_BASE, NTRK * sizeof(song_sound_t)) != 0;
++        int ok = resource_get(RES_SONG_BASE, BANK_NTRK * sizeof(song_sound_t)) != 0;
+         if (ok) song_base_reserved = 1;
+         motion_unguard(f); if (!ok) return 0;
+     }
+@@ -522,28 +526,28 @@
+     chain_from_legacy(&proj_scratch.chain);
+     memset(chain_patterns, 0, sizeof chain_patterns);
+     for (uint32_t r = 0; r < CHAIN_LEGACY_ROWS; r++)
+-        for (uint32_t k = 0; k < NTRK; k++) chain_patterns[r][k] = raw[BT(BL.chain) + r * NTRK + k];
++        for (uint32_t k = 0; k < BANK_NTRK; k++) chain_patterns[r][k] = raw[BT(BL.chain) + r * BANK_NTRK + k];
+     if (bank_song64) {
+         const uint8_t *song = raw + BT(BL.steps);
+         chain_config.count = song[0];
+         chain_config.rsv[CHAIN_LOOP] = song[1];
+         for (uint32_t r = 0; r < CHAIN_ROWS; r++) {
+-            chain_config.row[r].repeat = song[4u + r * (NTRK + 1u)];
+-            for (uint32_t k = 0; k < NTRK; k++) chain_patterns[r][k] = (uint8_t)bank_song_value(song[5u + r * (NTRK + 1u) + k]);
++            chain_config.row[r].repeat = song[4u + r * (BANK_NTRK + 1u)];
++            for (uint32_t k = 0; k < BANK_NTRK; k++) chain_patterns[r][k] = (uint8_t)bank_song_value(song[5u + r * (BANK_NTRK + 1u) + k]);
+             chain_config.row[r].slot = chain_patterns[r][0];
+         }
+     }
+     if (bank_sounds) {
+         const uint8_t *in = raw + bank_sound_off();
+         song_sound_count = in[0];
+-        memcpy(chain_config.sound, in + 4u, CHAIN_ROWS * NTRK);
++        memcpy(chain_config.sound, in + 4u, CHAIN_ROWS * BANK_NTRK);
+         memcpy(song_sound_pool(), in + BANKO_HEAD_BYTES, song_sound_count * sizeof(song_sound_t));
+     } else { song_sound_count = 0; resource_release(RES_SONG_SOUNDS); }
+     if (bank_patterns) memcpy(pattern_sound, raw + bank_pattern_off(), sizeof pattern_sound);
+     song_base_reserved = 0;
+     if (bank_songfx) memcpy(chain_config.fx, raw + BT(BL.steps) + BANKM_SONG_BYTES, BANKN_FX_BYTES);
+     memcpy(motion_pattern, bank_import_tags, sizeof motion_pattern);
+-    for (uint32_t k = 0; k < NTRK; k++) {
++    for (uint32_t k = 0; k < BANK_NTRK; k++) {
+         track_t *t = &trk[k];
+         uint32_t present = bank_present(raw, pos);
+         pos += BL.mask;
+diff -ruN --exclude=build melodee/firmware/src/project.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/project.c
+--- a/firmware/src/project.c	2026-11-19 12:02:09
++++ b/firmware/src/project.c	2026-11-19 12:00:38
+@@ -954,7 +954,8 @@
+         if (i != G_SLOT && i != G_LOAD && i != G_SAVE && i != G_CLOCK)   /* CLK: the device's (a backup: ed_bk_clock) */
+             song.g[i] = global_reserved(i) ? 0 : (int16_t)clamp(p->g[i], GP[i].min, GP[i].max);
+     shared_fx_normalize(song.g);
+-    for (k = PROJ_TRK; k < NTRK; k++) {                 /* the MIDI-only tracks: as a new one starts (an FBKL record's
++    for (k = NPART; k < NTRK; k++) {                    /* the MIDI-only tracks: as a new one starts (an FBKL record's
++                                                         * muse-midi-dx: from NPART, not PROJ_TRK: parts 5..14 are synths and keep their sounds)
+                                                          * tail: theirs, bank_restore_tail) */
+         track_t *t = &trk[k];
+         uint8_t b[BANKL_TRK_BYTES];
+diff -ruN --exclude=build melodee/firmware/src/resources.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/resources.c
+--- a/firmware/src/resources.c	2026-11-19 12:02:09
++++ b/firmware/src/resources.c	2026-11-19 11:52:56
+@@ -32,14 +32,14 @@
+ #endif
+ #define RESOURCE_MAIN_CAPACITY ((uint32_t)((uintptr_t)_resource_end - (uintptr_t)_resource_start))
+ #else
+-static uint32_t resource_host[163840];   /* (muse-midi-dx: x4, six parts) */
++static uint32_t resource_host[409600];   /* (muse-midi-dx: x10, fourteen parts) */
+ static uint32_t resource_host_low[5120], resource_host_data[512], resource_host_retained[1024];
+ static uint32_t resource_host_cache[7168], resource_host_cache_enabled;
+ #define RESOURCE_CACHE_AVAILABLE resource_host_cache_enabled
+ #define _resource_cache_start ((uint8_t *)resource_host_cache)
+ #define _resource_cache_end ((uint8_t *)(resource_host_cache + 7168))
+ #define _resource_start ((uint8_t *)resource_host)
+-#define _resource_end ((uint8_t *)(resource_host + 163840))
++#define _resource_end ((uint8_t *)(resource_host + 409600))
+ #define _resource_low_start ((uint8_t *)resource_host_low)
+ #define _resource_low_end ((uint8_t *)(resource_host_low + 5120))
+ #define _resource_data_start ((uint8_t *)resource_host_data)
+diff -ruN --exclude=build melodee/firmware/src/seq.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/seq.c
+--- a/firmware/src/seq.c	2026-11-19 12:02:09
++++ b/firmware/src/seq.c	2026-11-19 11:52:56
+@@ -45,7 +45,7 @@
+     RING_PUBLISH();
+     step_midi_w = w + 1u;
+ }
+-static volatile uint8_t panic_req;       /* bit per track: release every sounding note (preset / engine change) */
++static volatile uint32_t panic_req;      /* (muse-midi-dx: 32 bits, 14 parts) bit per track: release every sounding note (preset / engine change) */
+ #define MIDI_TRACK_FOLLOW 0x80u
+ static volatile uint8_t midi_hint;       /* MPC only: FOLLOW | (track + 1), for silent UI selection */
+ 
+diff -ruN --exclude=build melodee/firmware/src/settings_persist.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/settings_persist.c
+--- a/firmware/src/settings_persist.c	2026-11-19 12:02:09
++++ b/firmware/src/settings_persist.c	2026-11-19 11:52:56
+@@ -75,7 +75,7 @@
+ {
+     if (n != (int)sizeof *p || p->magic != PERSIST_MAGIC) return 0;
+     uint32_t work=p->ext.usb_off,points=(work>>8)&255u;
+-    settings_budget=(int16_t)(((work&0xffff0000u)==WORK_BUDGET_TAG && points>=8u && points<=96u)?points:VOICE_BUDGET_DEFAULT);
++    settings_budget=(int16_t)(((work&0xffff0000u)==WORK_BUDGET_TAG && points>=8u && points<=224u)?points:VOICE_BUDGET_DEFAULT);
+     uint32_t mode = work <= 3u || (work & 0xFFFF00FCu) == WORK_BUDGET_TAG ? work & 3u : 0u;
+     p->ext.usb_off=mode|(settings_budget!=VOICE_BUDGET_DEFAULT?WORK_BUDGET_TAG|((uint32_t)settings_budget<<8):0u);
+     if (p->ext.boot > PROJ_SLOTS)
+diff -ruN --exclude=build melodee/firmware/src/song_sound.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/song_sound.c
+--- a/firmware/src/song_sound.c	2026-11-11 11:12:03
++++ b/firmware/src/song_sound.c	2026-11-19 11:53:20
+@@ -27,7 +27,7 @@
+     uint32_t id = chain_sound_id(row, k);
+     return id ? id : pattern_sound_id(k, chain_bank(row, k));
+ }
+-static struct { uint8_t mask, active[NTRK]; } song_sounds;
++static struct { uint32_t mask; uint8_t active[NTRK]; } song_sounds;   /* (muse-midi-dx: 32-bit mask) */
+ static int16_t motion_base_value(const track_t *t, uint32_t id);
+ static void motion_restore(track_t *t);
+ static void motion_rebase(track_t *t);
+@@ -87,21 +87,21 @@
+ }
+ static int song_sound_prepare(void)
+ {
+-    uint8_t mask = 0;
++    uint32_t mask = 0;
+     song_sounds.mask = 0; memset(song_sounds.active, 0, sizeof song_sounds.active);
+     for (uint32_t r = 0; r < chain_config.count; r++) for (uint32_t k = 0; k < NTRK; k++) {
+         uint32_t id = chain_config.sound[r][k];
+         if (!id) continue;
+         const song_sound_t *s = song_sound_get(id);
+         if (!s || (k >= NPART && s->engine != ENGI_MIDI)) return 0;
+-        mask |= (uint8_t)(1u << k);
++        mask |= 1u << k;
+     }
+     for (uint32_t k = 0; k < NTRK; k++) for (uint32_t b = 0; b < NPAT; b++) {
+         uint32_t id = pattern_sound[k][b];
+         if (!id) continue;
+         const song_sound_t *s = song_sound_get(id);
+         if (!s || (k >= NPART && s->engine != ENGI_MIDI)) return 0;
+-        mask |= (uint8_t)(1u << k);
++        mask |= 1u << k;
+     }
+     song_sounds.mask = mask;
+     if (!song_sounds.mask) { resource_release(RES_SONG_BASE); return 1; }
+@@ -139,7 +139,7 @@
+         for (uint32_t b = 0; b < NPAT; b++) used |= pattern_sound[k][b];
+         if (!used) continue;
+         song_sound_capture((song_sound_t *)resource[RES_SONG_BASE].ptr + k, &trk[k], "");
+-        song_sounds.mask |= (uint8_t)(1u << k);
++        song_sounds.mask |= 1u << k;
+         uint32_t id = pattern_sound_id(k, trk[k].pattern);
+         if (id) { song_sound_apply(k, song_sound_get(id)); song_sounds.active[k] = (uint8_t)id; }
+     }
+@@ -159,7 +159,7 @@
+     if (!resource_get(RES_SONG_BASE, NTRK * sizeof(song_sound_t))) return 0;
+     if (song.playing && !(song_sounds.mask >> k & 1u)) {
+         song_sound_capture((song_sound_t *)resource[RES_SONG_BASE].ptr + k, &trk[k], "");
+-        song_sounds.mask |= (uint8_t)(1u << k);
++        song_sounds.mask |= 1u << k;
+     }
+     return 1;
+ }
+diff -ruN --exclude=build melodee/firmware/src/ui.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/ui.c
+--- a/firmware/src/ui.c	2026-11-19 12:02:09
++++ b/firmware/src/ui.c	2026-11-19 11:52:56
+@@ -917,7 +917,7 @@
+     if (u->what & UNDO_SOUND) {
+         uint8_t e = t->eng_req, pr = t->preset, un=t->user_native;
+         uint16_t us = t->user;
+-        panic_req |= (uint8_t)(1u << trk_index(t));
++        panic_req |= (uint32_t)(1u << trk_index(t));
+         t->eng_req = u->eng;
+         t->preset = u->preset;
+         t->user = u->user;
+@@ -1028,7 +1028,7 @@
+     const engine_t *e = ENGINES[t->eng_req % NENGINES];
+     uint32_t i;
+     load_begin(t, UNDO_SOUND);
+-    panic_req |= (uint8_t)(1u << trk_index(t));       /* MONO/POLY may change: release what sounds */
++    panic_req |= (uint32_t)(1u << trk_index(t));       /* MONO/POLY may change: release what sounds */
+     t->user = 0; t->user_native=0;
+     if (t == TSEL)
+         sync_reload = 1;
+--- a/firmware/src/ui_input.c	2026-11-19 12:09:25
++++ b/firmware/src/ui_input.c	2026-11-19 12:09:25
+@@ -142,7 +142,7 @@
+     for (b = 0; !dlg && b < NELEM(TRK_KEY) && b < trk_n(); b++)
+         if ((song.rec >> b) & 1u) *breath |= 1u << TRK_KEY[b];
+         else *dim |= 1u << TRK_KEY[b];
+-    if (!dlg) m |= 1u << TRK_KEY[song.sel];
++    if (!dlg && song.sel < NELEM(TRK_KEY)) m |= 1u << TRK_KEY[song.sel];   /* (muse-midi-dx: parts past the 8 keys have none) */
+     if (TSEL->pattern_next < NPAT) *breath |= 1u << PAT_KEY[TSEL->pattern_next];
+     for (b = 0; b < trk_npat(song.sel); b++)             /* (an edit waiting for the loop end: waiting too) */
+         if ((seq_pend[song.sel % NTRK] >> b) & 1u) *breath |= 1u << PAT_KEY[b];
+--- a/firmware/src/ui.c	2026-11-19 12:21:11
++++ b/firmware/src/ui.c	2026-11-19 12:21:11
+@@ -115,7 +115,10 @@
+ #define TRACKS_HIDE 32u
+ /* the four tracks Stage, MIXER, PATTERNS and SONG show: the selected one's (1..4, or the MIDI-only
+  * 5..8); a row k of them is track trk_group() + k */
+-static uint32_t trk_group(void) { return song.sel / NVIEW * NVIEW; }
++/* (muse-midi-dx: NTRK need not be a multiple of four: the last group ends at the last track, overlapping the one
++ * before it, so the four rows always are tracks) */
++static uint32_t trk_group_of(uint32_t k) { uint32_t g = k / NVIEW * NVIEW; return g + NVIEW > NTRK ? NTRK - NVIEW : g; }
++static uint32_t trk_group(void) { return trk_group_of(song.sel); }
+ static uint32_t stage_rows(void)
+ {
+     uint32_t g = trk_group(), n = trk_n() > g ? trk_n() - g : 0u;
+--- a/firmware/src/ui_layer.c	2026-11-19 12:21:11
++++ b/firmware/src/ui_layer.c	2026-11-19 12:21:11
+@@ -305,8 +305,8 @@
+     if (mine & 1u) {                                    /* OCT-: back to when it opened */
+         if (lys.l == LAYER_GLO) {
+             for (k = 0; k < 4u; k++) {                  /* (the four of the track selected when it opened) */
+-                trk[lys.trk / NVIEW * NVIEW + k].p[P_MUTE] = lys.v[k];
+-                trk[lys.trk / NVIEW * NVIEW + k].p[P_LEVEL] = lys.v[4u + k];
++                trk[trk_group_of(lys.trk) + k].p[P_MUTE] = lys.v[k];
++                trk[trk_group_of(lys.trk) + k].p[P_LEVEL] = lys.v[4u + k];
+             }
+             song.g[G_BPM] = lys.v[8];
+             ui_message("MIX PUT BACK");
+--- a/firmware/src/ui_patterns.c	2026-11-19 12:21:11
++++ b/firmware/src/ui_patterns.c	2026-11-19 12:21:11
+@@ -26,7 +26,7 @@
+ static void ptc_row(uint32_t k);
+ /* the track whose four rows the page shows: the selected one's (Copy to: the four of the track it goes to) */
+ static uint32_t pt_track(void) { return ptc_on() ? ui.ptc_to % NTRK : song.sel % NTRK; }
+-static uint32_t pt_group(void) { return pt_track() / NVIEW * NVIEW; }
++static uint32_t pt_group(void) { return trk_group_of(pt_track()); }
+ 
+ /* ------------------------------------------------------------ shared --- */
+ /* pattern b of track k holds something: a note, a hit, a recorded note's step */

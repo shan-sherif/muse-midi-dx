@@ -35,5 +35,6 @@ VERSION=$(sed -n 's/^#define MELODEE_VERSION "\([^"]*\)".*/\1/p' firmware/src/me
 emcc -O2 -ffp-contract=off -std=gnu99 -w -Ibuild/gen -Ifirmware/src -Itests -Iweb/emu \
     --no-entry -sSTANDALONE_WASM -sSTACK_SIZE=1048576 -sINITIAL_MEMORY=67108864 -sALLOW_MEMORY_GROWTH=1 -sFILESYSTEM=0 \
     -Ifirmware/src/x0x -o "$ROOT/web/melodee.wasm" "$ROOT/emu/game_glue.c" $(cat build/gen/ext_units.txt)
-printf '{"melodee":"%s","parts":6,"fxSlots":4}\n' "$VERSION" > "$ROOT/web/version.json"
-echo "build-emu: web/melodee.wasm ($(wc -c < "$ROOT/web/melodee.wasm" | tr -d ' ') B, Melodee $VERSION, six parts)"
+PARTS=$(sed -n 's/^#define NPART \([0-9]*\).*/\1/p' firmware/src/core.h | head -n 1)
+printf '{"melodee":"%s","parts":%s,"fxSlots":4}\n' "$VERSION" "$PARTS" > "$ROOT/web/version.json"
+echo "build-emu: web/melodee.wasm ($(wc -c < "$ROOT/web/melodee.wasm" | tr -d ' ') B, Melodee $VERSION, $PARTS parts)"

@@ -5,7 +5,8 @@
 //   - timed MIDI ("midiAt"): played when the audio clock reaches `at` (demo playback)
 //   - the engine/preset catalogue and preset loading
 
-const PARTS = [0, 1, 2, 3, 4, 5];                      // the six parts (patches/melodee-6parts.patch): 1 keys, 2 drums, 3..6
+let PARTS = [0, 1, 2, 3, 4, 5];                        // the synth parts, as the firmware has them (load: game_part_count):
+                                                       // 1 keys, 2 drums, the rest the song's instruments
 
 class MelodeeGame extends AudioWorkletProcessor {
   constructor() {
@@ -42,7 +43,9 @@ class MelodeeGame extends AudioWorkletProcessor {
       const { instance } = await WebAssembly.instantiate(m.wasm, { env: stub, wasi_snapshot_preview1: stub });
       const ex = instance.exports;
       ex._initialize();
+      if (ex.game_part_count) PARTS = Array.from({ length: ex.game_part_count() }, (_, i) => i);
       ex.web_boot(m.master);
+      if (ex.game_init) ex.game_init();               // (the page's own routing: no DRUM channel)
       this.mem = ex.memory;
       this.sentFb = -1;
       this.last = 0;
@@ -55,7 +58,7 @@ class MelodeeGame extends AudioWorkletProcessor {
       if (lofi >= 0) ex.game_palette_set(lofi);   // the screen in LO-FI (the page follows the device's palette)
       const categories = [];
       for (let c = 0; c < ex.game_cat_count(); c++) categories.push(this.str(ex.game_cat_name(c)));
-      this.port.postMessage({ type: "ready", engines: this.catalogue(), categories, palettes, mix: this.mix(),
+      this.port.postMessage({ type: "ready", parts: PARTS.length, engines: this.catalogue(), categories, palettes, mix: this.mix(),
                              tracks: PARTS.map((t) => [ex.game_track_engine(t), ex.game_track_preset(t)]) });   // (power-on's)
       return;
     }

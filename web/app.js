@@ -5,6 +5,7 @@ import { Game, KEYBOARDS, noteName } from "./game.js";
 import { DrumGame, LANES, DRUM_KEYS, laneOf } from "./drums.js";
 import { SONGS, beatAt } from "./songs.js";
 import { parseMidiFile } from "./midifile.js";
+import { soundForProgram } from "./gmsounds.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -12,7 +13,7 @@ const $ = (id) => document.getElementById(id);
  * project of shan-sherif.github.io), so "theme" alone could be another project's */
 const STORE_PREFIX = "muse-midi-dx:";
 const STORE_KEYS = ["theme", "sounds", "keysize", "keyshift", "transpose", "speed", "speedx", "offset", "metro", "letters",
-                    "instrument", "routes", "mix", "drumw", "outside"];
+                    "instrument", "routes", "mix", "drumw", "outside", "matchsounds"];
 const store = { get(k) { try { return localStorage.getItem(STORE_PREFIX + k); } catch { return null; } },
                 set(k, v) { try { localStorage.setItem(STORE_PREFIX + k, v); } catch {} },
                 del(k) { try { localStorage.removeItem(STORE_PREFIX + k); } catch {} } };
@@ -190,12 +191,13 @@ function draw(fb) {
 const CAT_ORDER = ["BASS", "LEAD", "PAD", "KEYS", "ORGAN", "STRING", "BRASS", "WIND", "PLUCK", "BELL", "DRUM", "FX", "OTHER"];   // browse.c
 const PIANO_RE = /PIANO|\bEP\b|E\.P|TINE|RHODES|WURL|HONKY/i;
 let sounds = [], current = { engine: -1, preset: -1 };
-let trackSounds = [];                                  // [engine, preset] of tracks 1..4 (the worklet's frames)
-// a tab per part (1 keys, 2, 3, 4 drums): the browser loads into the selected one; each tab keeps its own filters
-// six parts (MIDI channels 1..6): 1 the keys, 2 the drums, 3..6 the band
-const PART_TABS = [{ name: "Keys", part: "you" }, { name: "Drums", part: "drums" }, { name: "Instrument 1", part: 3 },
-                   { name: "Instrument 2", part: 4 }, { name: "Instrument 3", part: 5 }, { name: "Instrument 4", part: 6 }];
-// a part's name: Keys, Drums, Instrument 1..4; a loaded song's instruments name the parts they play on ("Finger Bass",
+let trackSounds = [];                                  // [engine, preset] of each part (the worklet's frames)
+// a tab per part: the browser loads into the selected one; each tab keeps its own filters
+// fourteen parts (MIDI channels 1..14, patches/05-fourteen-parts.patch): 1 the keys, 2 the drums, 3..14 the band
+const NPARTS = 14, INSTRUMENTS = Array.from({ length: NPARTS - 2 }, (_, i) => i + 3);   // (the band's part numbers)
+const PART_TABS = [{ name: "Keys", part: "you" }, { name: "Drums", part: "drums" },
+                   ...INSTRUMENTS.map((n) => ({ name: `Instrument ${n - 2}`, part: n }))];
+// a part's name: Keys, Drums, Instrument 1..12; a loaded song's instruments name the parts they play on ("Finger Bass",
 // two on one part: "Finger Bass +1")
 function partName(t) {
   const tab = PART_TABS[t];
@@ -213,18 +215,47 @@ let sndTarget = 0, filt = tabFilt[0];
 let audition = null;                                   // { ch, timer }: the audition note sounding
 function loadPreset(eid, k) {
   send({ type: "trackPreset", track: sndTarget, engine: eid, preset: k });
-  if (!node || playing()) return;                      // (in a song a C4 on your part could be judged)
+  pickSound(sndTarget, eid, k);
+  if (!node || playing()) return;                     // (in a song a C4 on your part could be judged)
   if (audition) { clearTimeout(audition.timer); send({ type: "midi", data: [0x80 | audition.ch, 60, 0] }); }
   const ch = sndTarget;                                // (part t: MIDI channel t + 1)
   send({ type: "midi", data: [0x90 | ch, 60, 100] }); // (after the load: the worklet takes messages in order)
   audition = { ch, timer: setTimeout(() => { send({ type: "midi", data: [0x80 | ch, 60, 0] }); audition = null; }, 550) };
 }
+// the parts shown (the Sound tabs, the mixer, Setup's sounds): Keys, Drums and the instrument parts the song plays on
+// (and the one selected); "+N more" shows all fourteen, until the next song (each song starts with its own parts only)
+let showAllParts = false;
+store.del("showparts");                                 // (was kept: no longer)
+function usedParts() {
+  const on = new Set([0, 1, sndTarget]);
+  let c = null;
+  try { c = setupOf(charts[$("song").value]); } catch {}   // (before the songs exist: Keys and Drums)
+  if (c) c.parts.forEach((p, i) => { if (typeof c.assign[i] === "number" && !p.generated) on.add(c.assign[i] - 1); });
+  return on;
+}
+const shownParts = () => (showAllParts ? new Set(PART_TABS.keys()) : usedParts());
+function moreButton(hidden) {                           // "+N more" / "Only the song's": shows or hides the unused parts
+  const b = document.createElement("button");
+  b.className = "parts-more";
+  b.textContent = showAllParts ? "Only the song's parts" : `+${hidden} more part${hidden > 1 ? "s" : ""}`;
+  b.title = showAllParts ? "Hide the parts this song does not use" : "Show all fourteen parts";
+  b.onclick = () => {
+    showAllParts = !showAllParts;
+    renderTabs();
+    if (!$("mixer").hidden) renderMixer();
+    if (!$("setup").hidden) renderPartSounds();
+  };
+  return b;
+}
 function renderTabs() {
   const box = $("snd-tabs");
   if (!box) return;
   box.textContent = "";
+  const shown = shownParts();
   PART_TABS.forEach((tab, t) => {
+    if (!shown.has(t)) return;
     const b = document.createElement("button"), cur = trackSounds[t], snd = cur && sounds.find((x) => x.engine === cur[0] && x.preset === cur[1]);
+    b.dataset.t = t;
     b.setAttribute("role", "tab");
     b.setAttribute("aria-selected", t === sndTarget);
     b.style.setProperty("--c", PART_COLORS[tab.part]);
@@ -235,14 +266,14 @@ function renderTabs() {
     b.onclick = () => setSoundTab(t);
     box.append(b);
   });
+  const hidden = PART_TABS.length - usedParts().size;
+  if (hidden > 0 || showAllParts) box.append(moreButton(hidden));
 }
 // a part sounding: its tab (and its mixer strip) lit, at once; let go, a quick fade (CSS)
 function showActivity(act) {
-  const tabs = $("snd-tabs").children, strips = $("mx-strips").children;
-  act.forEach((n, t) => {
-    if (tabs[t]) tabs[t].classList.toggle("live", n > 0);
-    if (strips[t] && !$("mixer").hidden) strips[t].classList.toggle("live", n > 0);
-  });
+  const tabs = $("snd-tabs").querySelectorAll("[data-t]"), strips = $("mx-strips").querySelectorAll("[data-t]");
+  for (const el of tabs) el.classList.toggle("live", act[el.dataset.t] > 0);
+  if (!$("mixer").hidden) for (const el of strips) el.classList.toggle("live", act[el.dataset.t] > 0);
 }
 function setSoundTab(t) {
   sndTarget = t;
@@ -388,8 +419,11 @@ function applyTheme(i) {
   // the ratings' colours: light on a dark page, deep on a light one
   const j = light ? ["#00707a", "#1d7a3a", "#8a5a00", "#b0213a"] : ["#9ff0ff", "#8ff0b0", "#ffd6a0", "#ff7a85"];
   ["pf", "gr", "gd", "ms"].forEach((k, n) => root.setProperty(`--j-${k}`, j[n]));
-  Object.assign(PART_COLORS, { you: hex(P1), drums: hex(P2), 3: hex(P3), 4: hex(P4),   // (parts 5, 6: between the palette's)
-                               5: hex(mixRgb(P1, P3, 0.5)), 6: hex(mixRgb(P2, P4, 0.5)) });
+  // the band's parts: the palette's two other track colours, then colours between the palette's; 9..14 those again,
+  // a third of the way to the text colour
+  const band = [P3, P4, mixRgb(P1, P3, 0.5), mixRgb(P2, P4, 0.5), mixRgb(P3, P4, 0.5), mixRgb(P1, P4, 0.5)];
+  Object.assign(PART_COLORS, { you: hex(P1), drums: hex(P2) });
+  INSTRUMENTS.forEach((n, i) => (PART_COLORS[n] = hex(i < band.length ? band[i] : mixRgb(band[i % band.length], T, 0.35))));
   // the highway stays dark (the blue / yellow notes read on it): the palette's background, or its text on a light one
   const water = light ? T : B, black = [0, 0, 0];
   game.setTheme({ top: trip(mixRgb(water, black, 0.45)), mid: trip(mixRgb(water, P1, 0.08)), bottom: trip(mixRgb(water, P1, 0.2)),
@@ -499,6 +533,7 @@ function onWorklet(e) {
     setupThemes(m.palettes);
     setupSounds(m.engines, m.categories);
     restoreSettings(m);
+    applySongSounds();                                  // (the song's instruments' sounds, over the saved ones)
     if (!$("setup").hidden) renderPartSounds();
     sentBpm = 0;
     pushBpm(chartNow().bpm);
@@ -758,29 +793,80 @@ if (!["auto", "fold", "score"].includes(outMode)) outMode = "auto";
 const songShift = new Map();                           // chart -> semitones
 const songTempo = new Map();                           // chart -> tempo ratio (1: as written; 0.75: three quarters as fast)
 const tempoOf = (c) => songTempo.get(c) || 1;
-const PART_COLORS = { you: "#8ea4ce", drums: "#92b88e", 3: "#d6b668", 4: "#da8c80", 5: "#b2ad9b", 6: "#b6a287", off: "rgba(142,166,196,0.35)" };   // (applyTheme: the device's track colours)
+const PART_COLORS = { you: "#8ea4ce", drums: "#92b88e", off: "rgba(142,166,196,0.35)" };   // (applyTheme: from the device's track colours)
 applyTheme(0);                                         // (LO-FI until the device says otherwise)
-function autoAssign(c) {                               // piano (else the busiest): your keys; the drum kit: your drums; bass 2; another 3
+// duplicates: an instrument whose notes (pitch, and start within 15 ms) are mostly another's, busier one's: a doubling
+// (two tracks of one line, or a line written twice). -> per part: { of: the part it doubles, share: 0..1 } or null
+const DUP_SHARE = 0.8;
+function findDuplicates(c) {
+  const key = (n, dt) => `${Math.round(n.t / 0.015) + dt}:${n.p}`;
+  const sets = c.parts.map((p) => new Set(p.notes.map((n) => key(n, 0))));
+  return c.parts.map((p, i) => {
+    if (p.generated || !p.notes.length) return null;
+    let best = null;
+    for (let j = 0; j < c.parts.length; j++) {             // (busier ones only: of two the same, the first stays)
+      const q = c.parts[j];
+      if (j === i || q.generated || q.drum !== p.drum || q.notes.length < p.notes.length ||
+          (q.notes.length === p.notes.length && j > i)) continue;
+      let same = 0;
+      for (const n of p.notes) if (sets[j].has(key(n, 0)) || sets[j].has(key(n, -1)) || sets[j].has(key(n, 1))) same++;
+      const share = same / p.notes.length;
+      if (share >= DUP_SHARE && (!best || share > best.share)) best = { of: j, share };
+    }
+    return best;
+  });
+}
+// a GM program's family (eight programs each: piano, chromatic percussion, organ, guitar, bass ...)
+const family = (p) => p.program >> 3;
+// who plays what at first: piano (else the busiest): your keys; the drum kit: your drums; a duplicate left out; the bass
+// on Instrument 1, the rest (busiest first) on 2..12; more than that: with an instrument of their family, else left out
+function autoAssign(c) {
   const a = c.parts.map(() => "off");
   if (c.parts.length === 1) { a[0] = "you"; return a; }
+  const dup = c.dups;
   const mel = c.parts.filter((p) => !p.drum);             // (parts: the busiest first)
-  const you = mel.find((p) => p.program <= 7) || mel[0];
+  const you = mel.find((p) => p.program <= 7 && !dup[p.id]) || mel[0];
   if (you) a[you.id] = "you";
-  const kit = c.parts.find((p) => p.drum);
-  if (kit) a[kit.id] = "drums";
-  const bass = mel.find((p) => p !== you && p.program >= 32 && p.program <= 39);
-  if (bass) a[bass.id] = 3;
-  for (const part of [4, 5, 6]) {                       // the busiest of the rest on parts 4..6 (3 too, without a bass)
-    const other = mel.find((p) => p !== you && a[p.id] === "off");
-    if (other) a[other.id] = part;
+  for (const p of c.parts) if (p.drum && !dup[p.id]) a[p.id] = "drums";   // (every kit: the drums part)
+  const rest = mel.filter((p) => p !== you && !dup[p.id]);
+  const bass = rest.find((p) => family(p) === 4);
+  const order = bass ? [bass, ...rest.filter((p) => p !== bass)] : rest;
+  const free = [...INSTRUMENTS];
+  for (const p of order) {
+    if (free.length) { a[p.id] = free.shift(); continue; }
+    const kin = order.find((q) => typeof a[q.id] === "number" && family(q) === family(p));
+    if (kin) a[p.id] = a[kin.id];
   }
-  if (!bass) { const other = mel.find((p) => p !== you && a[p.id] === "off"); if (other) a[other.id] = 3; }
   return a;
 }
 function setupOf(c) {
+  c.dups ||= findDuplicates(c);
   c.assign ||= autoAssign(c);
   c.range ||= { start: 0, end: c.beats.length - 1 };
+  c.picks ||= {};                                       // part number -> [engine, preset]: sounds chosen for this song
   return c;
+}
+// the band's sounds, for a song: each instrument part plays a sound like its song instrument's (the busiest of them)
+// unless one was chosen for it with this song (c.picks). Keys and Drums keep yours. (Match sounds off: none of this)
+let matchSounds = store.get("matchsounds") !== "0";
+function applySongSounds() {
+  if (!sounds.length || !trackSounds.length || !matchSounds) return;
+  const c = setupOf(charts[$("song").value]);
+  for (const n of INSTRUMENTS) {
+    const t = n - 1, src = c.parts.find((p, i) => c.assign[i] === n && !p.generated);
+    let want = c.picks[n];
+    if (!want && src) { const s = soundForProgram(sounds, src.program); if (s) want = [s.engine, s.preset]; }
+    if (!want) continue;
+    const cur = trackSounds[t];
+    if (cur && cur[0] === want[0] && cur[1] === want[1]) continue;
+    send({ type: "trackPreset", track: t, engine: want[0], preset: want[1] });
+    trackSounds[t] = want;                              // (the frames confirm it)
+  }
+}
+// a sound chosen for an instrument part by hand: kept with the song
+function pickSound(t, e, k) {
+  if (t < 2) return;
+  setupOf(charts[$("song").value]).picks[t + 1] = [e, k];
 }
 function chartNow() {
   const c = setupOf(charts[$("song").value]), shift = songShift.get(c) || 0;
@@ -870,9 +956,11 @@ $("tempo-reset").onclick = () => { songTempo.delete(charts[$("song").value]); re
 function reloadSong() {                                // after any change to the song's setup
   stopSong();
   loadSong(chartNow());
+  applySongSounds();
   showShift();
   showSongInfo();
   applyKeyboard();                                      // (the out-of-range warning)
+  if (!$("mixer").hidden) renderMixer();                // (the parts shown: the song's)
 }
 function transposeSong(d) {
   const c = charts[$("song").value];
@@ -908,12 +996,14 @@ function fillSongs(sel = 0) {
   const real = (c) => c.parts.filter((p) => !p.generated).length;   // (not the built-in songs' generated beat)
   charts.forEach((c, i) => $("song").add(new Option(`${c.title} · ${c.bpm} bpm` + (real(c) > 1 ? ` · ${real(c)} instruments` : ""), i)));
   $("song").value = sel;
+  showAllParts = false;                                 // (a new song: its own parts)
   loadSong(chartNow());
+  applySongSounds();
   showShift();
   showSongInfo();
 }
 fillSongs();
-$("song").onchange = () => { reloadSong(); if (!$("setup").hidden) openSetup(); };
+$("song").onchange = () => { showAllParts = false; reloadSong(); if (!$("setup").hidden) openSetup(); };
 // a song's title from its file's name: no extension, underscores as spaces, spaces tidied ("my_song-v2.mid": "my song-v2")
 const songTitle = (file) => file.replace(/\.(mid|midi|smf|kar)$/i, "").replace(/_+/g, " ").replace(/\s+/g, " ").trim();
 $("midfile").onchange = async () => {
@@ -933,7 +1023,8 @@ $("midfile").onchange = async () => {
   $("midfile").value = "";
 };
 /* ---- song setup: the section (a roll of the whole song, two handles) and who plays what */
-const PART_LABEL = { you: "You · keys", drums: "You · drums", 3: "Instrument 1", 4: "Instrument 2", 5: "Instrument 3", 6: "Instrument 4", off: "Leave out" };
+const PART_LABEL = { you: "You · keys", drums: "You · drums", off: "Leave out" };
+for (const n of INSTRUMENTS) PART_LABEL[n] = `Instrument ${n - 2}`;
 let preview = null;                                    // { part, timer }: an instrument heard alone
 const setupChart = () => setupOf(charts[$("song").value]);
 
@@ -954,7 +1045,7 @@ function closeSetup() {
 $("setup-btn").onclick = () => ($("setup").hidden ? (stopSong(), openSetup()) : closeSetup());
 $("su-done").onclick = closeSetup;
 $("su-whole").onclick = () => { const c = setupChart(); c.range = { start: 0, end: c.beats.length - 1 }; afterSetup(); };
-function afterSetup() { reloadSong(); drawRoll(); renderParts(); }
+function afterSetup() { reloadSong(); drawRoll(); renderParts(); renderPartSounds(); }
 
 // the roll: time across (the whole song), pitch up; each instrument in its part's colour; the section between two handles
 function drawRoll() {
@@ -1034,8 +1125,16 @@ function renderParts() {
       <td>${p.drum ? "drums" : `${noteName(Math.min(...ps))}–${noteName(Math.max(...ps))}`}</td><td><select></select></td>`;
     tr.querySelector(".nm").textContent = p.name;
     if (p.track && p.track !== p.name) { const sm = document.createElement("small"); sm.textContent = p.track; tr.querySelector(".nm").append(sm); }
+    const dup = c.dups[i];
+    if (dup) {                                           // (a doubling: which one, how much)
+      const tag = document.createElement("span");
+      tag.className = "dup";
+      tag.textContent = `same notes as ${c.parts[dup.of].name}`;
+      tag.title = `${Math.round(dup.share * 100)}% of its notes are ${c.parts[dup.of].name}'s (channel ${c.parts[dup.of].ch})`;
+      tr.querySelector(".nm").append(tag);
+    }
     const sel = tr.querySelector("select");
-    for (const k of ["you", "drums", 3, 4, 5, 6, "off"]) sel.add(new Option(PART_LABEL[k], k));
+    for (const k of ["you", "drums", ...INSTRUMENTS, "off"]) sel.add(new Option(PART_LABEL[k], k));
     sel.value = who;
     sel.style.setProperty("--c", who === "off" ? "" : PART_COLORS[who]);
     sel.onchange = () => { c.assign[i] = ["you", "drums", "off"].includes(sel.value) ? sel.value : Number(sel.value); afterSetup(); };
@@ -1086,7 +1185,9 @@ function renderPartSounds() {
   const box = $("su-sounds");
   box.textContent = "";
   if (!sounds.length) { box.innerHTML = `<p class="dim small">Switch on to choose the parts' sounds.</p>`; return; }
-  for (const t of [2, 3, 4, 5]) {                      // (parts 3..6: the keys and the drums are the Sound tabs')
+  const shown = shownParts(), list = INSTRUMENTS.map((n) => n - 1).filter((t) => shown.has(t));
+  if (!list.length) box.innerHTML = `<p class="dim small">No instrument parts in this song: the device plays only Keys and Drums.</p>`;
+  for (const t of list) {                              // (parts 3..14: the keys and the drums are the Sound tabs')
     const lab = document.createElement("label"), sel = document.createElement("select");
     lab.style.setProperty("--c", PART_COLORS[t + 1]);
     lab.innerHTML = `<b></b>`;
@@ -1099,11 +1200,19 @@ function renderPartSounds() {
     sel.dataset.track = t;
     const cur = trackSounds[t];
     if (cur) sel.value = `${cur[0]}:${cur[1]}`;
-    sel.onchange = () => { const [e, k] = sel.value.split(":").map(Number); send({ type: "trackPreset", track: t, engine: e, preset: k }); };
+    sel.onchange = () => { const [e, k] = sel.value.split(":").map(Number); send({ type: "trackPreset", track: t, engine: e, preset: k }); pickSound(t, e, k); };
     lab.append(sel);
     box.append(lab);
   }
+  const hidden = INSTRUMENTS.length - INSTRUMENTS.filter((n) => usedParts().has(n - 1)).length;
+  if (hidden > 0 || showAllParts) box.append(moreButton(hidden));
 }
+$("match-sounds").checked = matchSounds;
+$("match-sounds").onchange = () => {
+  matchSounds = $("match-sounds").checked;
+  store.set("matchsounds", matchSounds ? "1" : "0");
+  applySongSounds();
+};
 function syncPartSounds(tracks) {                      // (a frame: the device's own changes show here too)
   trackSounds = tracks;
   for (const sel of $("su-sounds").querySelectorAll("select")) {
@@ -1187,23 +1296,27 @@ function defaultSounds() {                             // the parts' power-on so
   const piano = sounds.find((x) => x.engineName === "CZ-1" && x.name === "PIANO 1");
   return bootTracks.map((t, i) => (i === 0 && piano ? [piano.engine, piano.preset] : t));
 }
-function loadSounds(list) { list.forEach(([e, k], t) => send({ type: "trackPreset", track: t, engine: e, preset: k })); }
+function loadSounds(list) {
+  list.forEach(([e, k], t) => send({ type: "trackPreset", track: t, engine: e, preset: k }));
+  trackSounds = list.map((x) => [...x]);                // (the frames confirm them)
+}
 function restoreSettings(m) {                          // at power-on: the saved theme and sounds (or the defaults)
   bootTracks = m.tracks;
   const i = palettes.findIndex((p) => p.name === store.get("theme"));
   if (i >= 0) send({ type: "palette", index: i });
   let list = null;
   try { list = JSON.parse(store.get("sounds")); } catch {}
-  const valid = Array.isArray(list) && list.length === PART_TABS.length &&
+  // (a list saved with fewer parts, as the six-part page's: its parts, the rest their power-on sounds)
+  const valid = Array.isArray(list) && list.length && list.length <= PART_TABS.length &&
     list.every((x) => Array.isArray(x) && sounds.some((snd) => snd.engine === x[0] && snd.preset === x[1]));
-  loadSounds(valid ? list : defaultSounds());
+  loadSounds(valid ? defaultSounds().map((d, t) => list[t] || d) : defaultSounds());
   bootMix = m.mix;
   mixState = JSON.parse(JSON.stringify(m.mix));
   let saved = null;
   try { saved = JSON.parse(store.get("mix")); } catch {}
-  const shape = (x) => x && Array.isArray(x.tracks) && x.tracks.length === PART_TABS.length && x.tracks.every((r) => r.length === 7) &&
-    Array.isArray(x.rack) && x.rack.length === 4 && x.rack.every((r) => r.length === 5);
-  if (shape(saved)) applyMix(saved);
+  const shape = (x) => x && Array.isArray(x.tracks) && x.tracks.length && x.tracks.length <= PART_TABS.length &&
+    x.tracks.every((r) => r.length === 7) && Array.isArray(x.rack) && x.rack.length === 4 && x.rack.every((r) => r.length === 5);
+  if (shape(saved)) applyMix({ ...saved, tracks: m.mix.tracks.map((r, t) => saved.tracks[t] || r) });   // (fewer parts: the rest as they are)
   saveAfter = performance.now() + 1500;                // (the device has them by then; from there, what it shows is kept)
 }
 function saveFromFrame(m) {
@@ -1230,13 +1343,16 @@ function resetAll() {
   if (midi) fillInputs();
   songShift.clear();
   songTempo.clear();                                   // the songs' setups: transpose, section, who plays what
-  for (const c of charts) { delete c.assign; delete c.range; }
+  for (const c of charts) { delete c.assign; delete c.range; delete c.picks; }
+  matchSounds = true; $("match-sounds").checked = true;
+  showAllParts = false;
   reloadSong();
   if (!$("setup").hidden) openSetup();
   if (node && bootTracks) {                            // the device: LO-FI, the parts' first sounds
     const lofi = palettes.findIndex((p) => p.name === "LO-FI");
     if (lofi >= 0) send({ type: "palette", index: lofi });
     loadSounds(defaultSounds());
+    applySongSounds();
     if (bootMix) applyMix({ ...bootMix, master: 700 });
     store.del("mix");
     saveAfter = performance.now() + 1500;
@@ -1398,10 +1514,13 @@ function renderMixer() {
   if (!mixState) return;
   const strips = $("mx-strips");
   strips.textContent = "";
+  const shown = shownParts();
   PART_TABS.forEach((tab, t) => {
+    if (!shown.has(t) && !solo.has(t)) return;
     const row = mixState.tracks[t], cur = trackSounds[t], snd = cur && sounds.find((x) => x.engine === cur[0] && x.preset === cur[1]);
     const el = document.createElement("div");
     el.className = "mx-strip" + (row[2] ? " muted" : "");
+    el.dataset.t = t;
     el.style.setProperty("--c", PART_COLORS[tab.part]);
     el.innerHTML = `<div class="nm"><b></b><small></small></div>`;
     el.querySelector("b").textContent = `${partName(t)}${(t === 0 && keysOn()) || (t === 1 && drumsOn()) ? " · you" : ""}`;
@@ -1424,6 +1543,8 @@ function renderMixer() {
     el.append(btns);
     strips.append(el);
   });
+  const hidden = PART_TABS.length - usedParts().size;
+  if (hidden > 0 || showAllParts) strips.append(moreButton(hidden));
   const m = document.createElement("div");                // the master: the FM-1's MASTER knob
   m.className = "mx-strip master";
   m.innerHTML = `<div class="nm"><b>Master</b><small>the device's output</small></div>`;
@@ -1463,9 +1584,9 @@ function syncMixer(mix) {                              // the device's values in
   const after = JSON.stringify([mix.mode, mix.rack.map((r) => r[0]), mix.tracks.map((r) => r[2])]);
   if ($("mixer").hidden) return;
   if (before !== after) return renderMixer();
-  const strips = [...$("mx-strips").children];
+  const strips = $("mx-strips");
   mix.tracks.forEach((row, t) => {
-    const c = strips[t] && strips[t].querySelectorAll(".mx-ctl");
+    const el = strips.querySelector(`[data-t="${t}"]`), c = el && el.querySelectorAll(".mx-ctl");
     if (!c) return;
     c[0].sync(row[0]); c[1].sync(row[1]);
     (mix.mode ? SENDS : [3]).forEach((k, i) => c[2 + i] && c[2 + i].sync(row[k]));

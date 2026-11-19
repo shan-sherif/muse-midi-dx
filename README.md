@@ -12,8 +12,8 @@ computer keyboard or the screen. Every press is judged PERFECT (±50 ms), GREAT 
 
 The sound comes from [Melodee](https://github.com/keremimo/melodee), synthesizer firmware for the M-VAVE FM-1 and a
 fork of [Felucca](https://github.com/hugelton/Felucca). It is compiled to WebAssembly and runs in the browser, so the
-engines, presets and effects are the firmware's own. No FM-1 is needed. The game runs a modified Melodee: six parts
-and a four-slot effects rack (see [Our changes to Melodee](#our-changes-to-melodee)).
+engines, presets and effects are the firmware's own. No FM-1 is needed. The game runs a modified Melodee: fourteen
+parts and a four-slot effects rack (see [Our changes to Melodee](#our-changes-to-melodee)).
 
 ## Playing
 
@@ -28,16 +28,18 @@ Web MIDI needs Chrome or Edge (or Firefox with Web MIDI enabled), and a page ser
 
 ### Instruments and parts
 
-The device has six parts, one per MIDI channel:
+The device has fourteen parts, one per MIDI channel:
 
 | Part / channel | Plays | Power-on sound |
 | --- | --- | --- |
 | 1 | **Keys**: you, in Keyboard or Both | CZ-1 PIANO 1 |
 | 2 | **Drums**: you, in Drums or Both | 808 KIT |
-| 3–6 | **Instrument 1–4**: the rest of a MIDI file, played by the device | FM6 SOLID BASS, CZ-1 SYNTH.LEAD 1, Prophet, FM6 STRINGS |
+| 3–14 | **Instrument 1–12**: the rest of a MIDI file, played by the device | FM6 SOLID BASS, CZ-1 SYNTH.LEAD 1, Prophet, FM6 STRINGS … |
 
-Whichever of keys or drums you are not playing, the device plays. When a MIDI file is loaded, Instruments 1–4 take
-the names of the file's instruments ("Finger Bass", "Alto Sax" …) to help with the selection of instruments from the engine to play.
+Whichever of keys or drums you are not playing, the device plays. When a MIDI file is loaded, the instrument parts take
+the names of the file's instruments ("Finger Bass", "Alto Sax" …) and, with **Match sounds** on, a sound like them
+(see Setup below). The **Sound** tabs, the mixer and Setup's sounds show only the parts the song uses; **+N more parts**
+shows all fourteen.
 
 - **Keyboard:** a falling-note piano. Blue notes are white keys, yellow notes are black keys.
 - **Drums:** eight lanes (Crash, Hi-hat, Snare, Kick, Tom 1, Tom 2, Floor, Ride), each in its kit colour.
@@ -64,9 +66,18 @@ the names of the file's instruments ("Finger Bass", "Alto Sax" …) to help with
   - **Section:** a piano roll of the whole song. Drag the start and end handles (they snap to beats) to play a part
     of it.
   - **Who plays what:** each instrument in the file, with ▶ to hear it alone, its channel, notes and range. Set each
-    to **You · keys**, **You · drums**, **Instrument 1–4** or **Leave out**. The picks start automatically: piano
-    yours, the drum kit yours, a bass on Instrument 1, the busiest of the rest on 2–4.
-  - **Sounds** for Instruments 1–4.
+    to **You · keys**, **You · drums**, **Instrument 1–12** or **Leave out**. The picks start automatically: piano
+    yours, the drum kit yours, a bass on Instrument 1, the busiest of the rest on 2–12. A song with more instruments
+    than that puts the extra ones on a part with an instrument of their family (strings with strings …), or leaves
+    them out.
+  - **Duplicates:** an instrument whose notes are mostly another's (80% or more of them at the same pitch and time) is
+    marked **same notes as …** and left out at first. These are doublings, such as a line written on two tracks. Set
+    it to a part to hear it anyway.
+  - **Match sounds** (on by default): each instrument part gets the sound nearest its General MIDI instrument. For
+    example, Finger Bass gets CZ-1 ELEC.BASS 1, Alto Sax gets CZ-1 SAXOPHONE and Warm Pad gets ANALOG WARM PAD
+    (`web/gmsounds.js`, one choice for each of the 128). A sound you choose for a part yourself (here or in the
+    Sound tabs) stays with that song. Keys and Drums keep yours.
+  - **Sounds** for the instrument parts.
 - **Transpose:** move the song up or down by semitones (« » a whole octave), ±24. Drums are not transposed.
 - **Tempo:** play the song slower or faster: − / + by 1 BPM, or type a BPM (25% to 200% of the song's own). The
   original stays shown beside it, and **Reset** puts it back. Everything follows: the notes, the band, the metronome
@@ -169,6 +180,7 @@ npm run check:native                            # the sanitizer check (see Check
 | `web/worklet.js` | the firmware in an AudioWorklet: audio, the screen, held notes, timed MIDI, presets, mixer |
 | `web/songs.js` | the built-in songs and their generated beats |
 | `web/midifile.js` | `.mid` → a chart, its instruments kept apart |
+| `web/gmsounds.js` | each General MIDI instrument's nearest sound (Match sounds) |
 | `docs/media/gameplay.gif` | the README's recording: Ode to Joy on piano and drums, CPU mode |
 
 ## Our changes to Melodee
@@ -180,7 +192,7 @@ every build.
 `patches/01-six-parts.patch`:
 
 - **Six parts** (`NPART` 6, `NMIDI` 2, so there are still 8 tracks): MIDI channels 1–6 play parts 1–6. Part 1 is the
-  keys, part 2 the drums, parts 3–6 the rest. The power-on sounds are as in the table above.
+  keys, part 2 the drums, parts 3–6 the rest. (Patch 05 then makes them fourteen.)
 - `NVIEW` 4: what one device screen shows at once (rows, knob cards, mute keys). The device's screens page through
   tracks 1–4 and 5–8, as before.
 - The visualiser (HOME's chord view, and Stage) shows parts 1 and 2 only, the ones you play.
@@ -212,13 +224,30 @@ every build.
 - **Undoing a sound load on a MIDI-only track** (tracks 7–8 here, 5–8 on the FM-1) wrote its Prophet patch past
   Melodee's table, which has an entry per synth part only. Only synth parts swap it now.
 
+`patches/05-fourteen-parts.patch`:
+
+- **Fourteen parts** (`NPART` 14, `NMIDI` 1: 15 tracks). This is the most there can be, because a held note keeps its
+  track's number in four bits. MIDI channels 1–14 play parts 1–14, and the voice budget is 112 points by default
+  (224 at most).
+- Pattern banks: 8 a track (`NPAT` 8; tracks × banks must fit in 128). The saved pattern-bank format keeps its 8 tracks.
+- The masks that hold one bit a track are 32-bit where a part past 8 can set its bit: panic, the MIDI targets, and
+  the Song sounds. Melodee's own sequencer recording and motion keep their 8-bit masks, so parts 9–14 do not record
+  into the device's sequencer. The game does not use it.
+- Two bugs that appear past 8 tracks, found by the sanitizer check. Bank serialisation wrote past its tables for
+  tracks past the saved four. Loading a project turned parts 5 and up into MIDI tracks.
+- The device's screens: track keys exist for the first 8 parts only. Screens that show four tracks at a time end
+  their last group at the last track (12–15 would be past it).
+
+The glue (`emu/game_glue.c`, `game_init`) also turns off Melodee's DRUM channel setting, which sends channel 10 to
+the drum part. The page routes every note to its part itself, so channel 10 is Instrument 8's.
+
 Built alongside, without patching Melodee's source: its palettes with the track colours reversed
 (`scripts/gen_palettes.py`).
 
 ## Checks
 
 `npm run check:native` builds the patched firmware natively with AddressSanitizer and UndefinedBehaviorSanitizer. It
-plays all six parts, sets their mix, selects every track, presses every button and knob, puts every effect in every
+plays all fourteen parts, sets their mix, selects every track, presses every button and knob, puts every effect in every
 rack slot (Chain and Split), every preset of every engine from `engines/` on every part, then runs 20,000 random
 inputs, engines switched on parts among them. `NATIVE_SEED=n` gives another random run, `NATIVE_TRACE=1` prints each
 input. The alignment
@@ -232,6 +261,9 @@ purpose, both upstream as here.
   what, the instruments' sounds). Link it from the game's page.
 - [ ] **A screen for the device's settings**, separate from the game. The device's own screens (GLO, the rack, …)
   are not used; its screen is the visualiser only.
+- [ ] **Remove the device's unused screens** (sequencer, mixer, song …) from the build. Everything is set on the
+  page, and only the visualiser is shown. Until then they still work under **Advanced**, at 14 parts too (memory-safe,
+  but laid out for 8).
 - [ ] **More sound engines** (possibly). Engines from other projects plug in as folders in `engines/` (so far x0x's 303
   and SLOOP's ANALOG). Melodee keeps more of its own that are retired or turned off in its build (e.g. PHASE, VOICE,
   TRIO, WHEEL, NOISE, behind `MELODEE_LEGACY_EXTRAS`).

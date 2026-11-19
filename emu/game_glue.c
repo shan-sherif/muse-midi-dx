@@ -160,3 +160,9 @@ EXPORT(game_track_active) uint32_t game_track_active(uint32_t t)
         n += trk[t].v[i].active && trk[t].v[i].stage != 4u;
     return n;
 }
+
+/* the synth parts (NPART: patches/05-fourteen-parts.patch): the page sizes its tabs, mixer and routing by it */
+EXPORT(game_part_count) uint32_t game_part_count(void) { return NPART; }
+/* after web_boot: the page routes every note to its part's channel itself (your drums: channel 2), so channel 10 is
+ * Instrument 8's, not the drum part's (Melodee's DRUM channel setting: off) */
+EXPORT(game_init) void game_init(void) { settings_drumch = 0; }

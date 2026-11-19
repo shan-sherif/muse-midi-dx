@@ -145,14 +145,17 @@
           <details class="su-adv" id="su-adv">
             <summary>Advanced: who plays what</summary>
             <p class="dim small">You play <b>You · keys</b> and <b>You · drums</b> (as Keyboard / Drums / Both at the top says;
-              the one you are not playing, the device plays). Instruments 1–4 are played by the device along with you (MIDI channels 3–6);
-              the rest are left out. ▶ plays an instrument alone from the section's start.</p>
+              the one you are not playing, the device plays). Instruments 1–12 are played by the device along with you (MIDI channels 3–14).
+              An instrument playing the same notes as another is marked <b>same notes</b> and left out at first. ▶ plays an instrument
+              alone from the section's start.</p>
             <div class="su-table-wrap">
               <table class="su-table">
                 <thead><tr><th></th><th>Instrument</th><th>Ch</th><th>Notes</th><th>Range</th><th>Part</th></tr></thead>
                 <tbody id="su-parts"></tbody>
               </table>
             </div>
+            <label class="small su-match"><input type="checkbox" id="match-sounds"> Match sounds: each instrument part gets a sound
+              like the song's instrument (a sound you choose for it stays with the song)</label>
             <div class="su-sounds" id="su-sounds"></div>
           </details>
         </div>
