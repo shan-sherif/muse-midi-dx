@@ -117,23 +117,52 @@ shows all fourteen.
 
 ### The device screen
 
-The FM-1's own 240×240 screen, top left, shows the chord view: the notes of parts 1 and 2 on a wheel of fifths, the
-chord's name, and a keyboard. It also shows the song's BPM. The device's own controls are under **Advanced** in the
-left column.
+The screen top left is drawn by the page, and shows what you are playing. All three views show the tempo top left and
+the engine playing top right (as the device's screen does). **Advanced: device controls** (the left column) shows
+Melodee's own screen instead while it is open, for its buttons and knobs.
 
-**Waves**, in the middle of the header between the song's title and the score, shows the wave of every part that
-is sounding, overlaid, each in its part's colour: the same colour as its Sound tab, which glows with it. They are the
-parts' real signals, after their level, mute and solo and before pan and the effects. Each is drawn from a rising zero
-crossing, so a held note stands still as on an oscilloscope, and all share one scale that follows the loudest. The
-**Waves** button next to "Now playing" hides them (on by default, kept). On a narrow window they get a row of their
-own under the title.
+**Keyboard: the chord wheel** (`web/wheel.js`). The twelve notes round a circle of fifths. The notes you hold light up,
+joined into the chord's shape, and the centre names them: a chord ("C", "Am", "G7", "C/E" …) or a note ("D4"). The
+song's next notes show as rings closing in on theirs, and their name waits in the centre ("next") while you hold
+nothing. Along the bottom, the keys on screen: what you hold lit (in its rating's colour as it is judged), the next
+notes marked.
+
+**Drums: the rhythm ring** (`web/ring.js`). One turn is one bar, with a hand sweeping round in time.
+- Each drum is a ring in its kit colour, a drum staff read from the bottom up: **Kick** outermost, then Snare, the toms
+  (Tom 1, Tom 2 and Floor share one ring, each hit in its own colour), Ride, Hi-hat, and **Crash** innermost.
+- The song's hits for the bar are hollow dots (red once missed). Your hits are filled dots where they landed, so an
+  early or late hit shows against its target.
+- Last bar's dots fade as the hand comes round, so the groove reads as a pattern: four kicks evenly spaced round the
+  outside, hats in between.
+- The centre shows the beat, with the bar under it. With no song playing, the hand keeps time at the song's tempo for
+  free play.
+- Top right: the drum part's engine, in the kick's colour.
+
+**Both: the ring plus a Keys ring.** The same ring, with one more ring outside the kick for the keys, in white (the
+theme's text colour, so it is never taken for a drum). The song's piano notes for the bar are hollow dots (a chord as
+one), your key presses filled dots, so your hands and feet show against each other in the bar. While you hold keys, the
+centre names them (a chord, else the note), with the beat and bar under it. Top right: both engines, Keys then Drums
+("CZ-1 · DRUM"), each in its colour.
+
+The drum colours are fixed, as drum games colour a kit: Crash pink, Hi-hat blue, Ride teal, Snare yellow, Kick violet,
+Tom 1 green, Tom 2 red, Floor orange. The drum highway's lanes and pads use the same ones.
+
+### Waves
+
+In the middle of the header, between the song's title and the score: the wave of every part that is sounding,
+overlaid, each in its part's colour (the same colour as its Sound tab, which glows with it). They are the parts' real
+signals, after their level, mute and solo and before pan and the effects. Each is drawn from a rising zero crossing,
+so a held note stands still as on an oscilloscope, and all share one scale that follows the loudest. The **Waves**
+button next to "Now playing" hides them (on by default, kept). On a narrow window they get a row of their own under the
+title.
 
 ### Themes and settings
 
 - **Theme** (top): the device screen's palette. The whole page takes its colours from it: NIGHT, DAY, CONTRAST,
   SUNSET, OCEAN, NEON, CANDY or **LO-FI** (default). Changing it on the device does the same.
 - **Kept in this browser:** the theme, every part's sound, the mix and effects, the instrument (Keyboard, Drums,
-  Both), MIDI routing, keys, octave, Outside, speed, offset, metronome, key letters and the drum screen's width.
+  Both), MIDI routing, keys, octave, Outside, speed, offset, metronome, key letters, the drum screen's width, Waves and
+  Match sounds.
   Songs and their setup are kept until the page is reloaded.
 - **Defaults** (top, click twice): puts all of it back.
 - **⛶:** full screen.
@@ -175,19 +204,21 @@ npm run check:native                            # the sanitizer check (see Check
 | `engines/` | engines from other projects, a folder a source ([engines/README.md](engines/README.md)) |
 | `scripts/gen_ext_engines.py` | finds the sources in `engines/`, checks their ids and licences, writes their tables |
 | `.github/workflows/pages.yml` | publishes `web/` to GitHub Pages |
-| `emu/game_glue.c` | Melodee's browser glue (`web/emu/melodee_web.c`) plus the game's exports: held notes, presets per part, the mixer and rack, palettes, BPM, part activity |
+| `emu/game_glue.c` | Melodee's browser glue (`web/emu/melodee_web.c`) plus the game's exports: held notes, presets per part, the mixer and rack, palettes, BPM, part count and activity, the parts' waves, `game_init` (no DRUM channel) |
 | `emu/native_check.c`, `.sh` | the sanitizer check of the patched firmware |
-| `scripts/build-emu.sh` | copies Melodee to `.build/melodee`, applies the patches, generates its headers, builds `web/melodee.wasm` |
+| `scripts/build-emu.sh` | copies Melodee to `.build/melodee`, applies the patches, generates its headers, builds `web/melodee.wasm` and `web/version.json` (Melodee's version, the part count) |
 | `scripts/gen_palettes.py` | the device's palettes with the track colours reversed |
 | `scripts/serve.mjs` | a small static server for `web/` |
 | `web/index.html`, `style.css` | the page |
-| `web/app.js` | the device screen, sounds, mixer, themes, MIDI and routing, songs and setup, scheduling, settings |
+| `web/app.js` | the screens (which shows), sounds and Match sounds, mixer, themes, MIDI and routing, songs and setup (duplicates, who plays what), the waves, scheduling, settings |
 | `web/game.js` | the piano highway: drawing, judging, scoring |
 | `web/drums.js` | the drum highway |
-| `web/worklet.js` | the firmware in an AudioWorklet: audio, the screen, held notes, timed MIDI, presets, mixer |
+| `web/worklet.js` | the firmware in an AudioWorklet: audio, Melodee's screen, held notes, timed MIDI, presets, mixer, the parts' waves |
 | `web/songs.js` | the built-in songs and their generated beats |
 | `web/midifile.js` | `.mid` → a chart, its instruments kept apart |
 | `web/gmsounds.js` | each General MIDI instrument's nearest sound (Match sounds) |
+| `web/ring.js` | the rhythm ring (Drums and Both, in the device screen's place) and the chord names |
+| `web/wheel.js` | the chord wheel (Keyboard, in the device screen's place) |
 | `docs/media/gameplay.gif` | the README's recording: Ode to Joy on piano and drums, CPU mode |
 
 ## Our changes to Melodee
@@ -265,8 +296,7 @@ Built alongside, without patching Melodee's source: its palettes with the track 
 plays all fourteen parts, sets their mix, selects every track, presses every button and knob, puts every effect in every
 rack slot (Chain and Split), every preset of every engine from `engines/` on every part, then runs 20,000 random
 inputs, engines switched on parts among them. `NATIVE_SEED=n` gives another random run, `NATIVE_TRACE=1` prints each
-input. The alignment
-and shift checks are off: the host harness removes every `__attribute__`, and the DSP code shifts negative values on
+input. The alignment and shift checks are off: the host harness removes every `__attribute__`, and the DSP code shifts negative values on
 purpose, both upstream as here.
 
 ## To do
@@ -275,10 +305,11 @@ purpose, both upstream as here.
   **MIDI in**, route two devices in **Routing**, load a `.mid` file, and use **Setup** (choosing a section, who plays
   what, the instruments' sounds). Link it from the game's page.
 - [ ] **A screen for the device's settings**, separate from the game. The device's own screens (GLO, the rack, …)
-  are not used; its screen is the visualiser only.
+  are not used; the page draws the screen (the chord wheel, the rhythm ring), Melodee's only under **Advanced**.
+- [ ] **Stop drawing Melodee's screen while Advanced is closed.** It is hidden then, but the engine still draws it and
+  the worklet sends its 115 KB frame 30 times a second.
 - [ ] **Remove the device's unused screens** (sequencer, mixer, song …) from the build. Everything is set on the
-  page, and only the visualiser is shown. Until then they still work under **Advanced**, at 14 parts too (memory-safe,
-  but laid out for 8).
+  page. Until then they still work under **Advanced**, at 14 parts too (memory-safe, but laid out for 8).
 - [ ] **More sound engines** (possibly). Engines from other projects plug in as folders in `engines/` (so far x0x's 303
   and SLOOP's ANALOG). Melodee keeps more of its own that are retired or turned off in its build (e.g. PHASE, VOICE,
   TRIO, WHEEL, NOISE, behind `MELODEE_LEGACY_EXTRAS`).

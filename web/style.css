@@ -424,3 +424,5 @@ button.big { font-size: 16px; padding: 10px 26px; border-radius: 10px; }
   .hud.waves-on { grid-template-columns: minmax(0, 1fr) auto; }
   .scope-wrap { grid-column: 1 / -1; height: 72px; }
 }
+/* ---- the page's screens over the device's, the same size: the rhythm ring (Drums, Both), the chord wheel (Keyboard) */
+#ring, #wheel { position: absolute; inset: 9px; width: calc(100% - 18px); height: calc(100% - 18px); border-radius: 8px; display: block; }

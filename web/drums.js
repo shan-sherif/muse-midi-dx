@@ -7,7 +7,8 @@ import { WINDOWS, roundRect } from "./game.js";
 
 const MISS = { name: "MISS", color: "#ff6b81" };
 // the lanes, left to right: the General MIDI notes each takes, the note a pad plays, its computer key, its colour (fixed,
-// as drum games colour a kit: the snare yellow, the toms green / red / orange, the kick violet, the cymbals pink and blues);
+// as drum games colour a kit: the snare yellow, the toms green / red / orange, the kick violet, the crash pink, the hi-hat
+// blue, the ride teal: three cymbals told apart at a glance);
 // every pad a plain circle
 export const LANES = [
   { name: "Crash", notes: [49, 52, 55, 57], play: 49, key: "A", color: "255,79,163" },
@@ -17,7 +18,7 @@ export const LANES = [
   { name: "Tom 1", notes: [48, 50], play: 48, key: "J", color: "79,224,122" },
   { name: "Tom 2", notes: [45, 47], play: 45, key: "K", color: "255,90,79" },
   { name: "Floor", notes: [41, 43], play: 43, key: "L", color: "255,154,60" },
-  { name: "Ride", notes: [51, 53, 59], play: 51, key: ";", color: "79,139,255" },
+  { name: "Ride", notes: [51, 53, 59], play: 51, key: ";", color: "0,206,180" },
 ];
 export const DRUM_KEYS = { KeyA: 0, KeyS: 1, KeyD: 2, KeyF: 3, KeyJ: 4, KeyK: 5, KeyL: 6, Semicolon: 7 };
 const LANE_OF = new Map(LANES.flatMap((l, i) => l.notes.map((n) => [n, i])));

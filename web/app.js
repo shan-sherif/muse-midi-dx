@@ -6,6 +6,8 @@ import { DrumGame, LANES, DRUM_KEYS, laneOf } from "./drums.js";
 import { SONGS, beatAt } from "./songs.js";
 import { parseMidiFile } from "./midifile.js";
 import { soundForProgram } from "./gmsounds.js";
+import { RhythmRing } from "./ring.js";
+import { ChordWheel } from "./wheel.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -498,6 +500,10 @@ function applyTheme(i) {
                   glow: trip(P2), text: trip(light ? B : T), accent: trip(P1), warm: trip(P3), ink: trip(mixRgb(water, black, 0.3)),
                   base: trip(mixRgb(water, black, 0.6)) });
   drum.setTheme({ ...game.th, accent2: trip(P4) });
+  // (the device screen's own colours; Both's keys in the text colour, white on a dark theme: no track colour, so never
+  // the snare's yellow)
+  ring.setTheme({ bg: trip(B), text: trip(T), accent: trip(P1), keys: trip(T) });
+  wheel.setTheme({ bg: trip(B), text: trip(T), keys: trip(P1), drums: trip(P2) });
   renderTabs();
   $("theme").value = i;
   if (!$("setup").hidden) { renderParts(); renderPartSounds(); drawRoll(); }
@@ -791,6 +797,26 @@ const game = new Game($("highway"), {
   onPianoKey: (p, down) => send({ type: "midi", data: down ? [0x90, p, 100] : [0x80, p, 0] }),
 });
 const drum = new DrumGame($("drumway"), { now: audioNow, onHud: () => updateHud(), onEnd: () => gameEnded("drums"), onPad: drumPad });
+// Drums and Both: the rhythm ring in the device screen's place (ring.js); every hit and key, yours or the CPU's, goes
+// to it too (Both: the keys get a ring of their own)
+// a part's engine name ("CZ-1", "DRUM"): the screens' top right
+const engineOf = (t) => { const cur = trackSounds[t], s = cur && sounds.find((x) => x.engine === cur[0] && x.preset === cur[1]); return s ? s.engineName : ""; };
+const ring = new RhythmRing($("ring"), { drum, game, now: audioNow, engines: () => [engineOf(0), engineOf(1)] });
+{ const judge = drum.hit.bind(drum); drum.hit = (lane, t) => { ring.hit(lane, t); judge(lane, t); }; }
+{ const judge = game.noteOn.bind(game); game.noteOn = (p, t) => { ring.keyHit(t); judge(p, t); }; }
+// Keyboard: the chord wheel in the device screen's place (wheel.js)
+const wheel = new ChordWheel($("wheel"), {
+  game,
+  bpm: () => sentBpm,
+  sound: () => engineOf(0),
+});
+// which screen shows: the wheel (Keyboard), the ring (Drums, Both); Advanced open: the device's own (its buttons work it)
+function showScreen() {
+  const device = document.querySelector("details.advanced").open;
+  $("wheel").hidden = device || inst !== "keys";
+  $("ring").hidden = device || inst === "keys";
+}
+document.querySelector("details.advanced").addEventListener("toggle", showScreen);
 hudReady = true;
 const lead = () => (keysOn() ? game : drum);            // (the song's clock: the same t0 for both)
 const playing = () => game.playing || drum.playing;
@@ -1512,7 +1538,7 @@ function endSchedulers() {
   send({ type: "clearTimed" });
 }
 let songChart = null;                                  // (what is playing: chartNow() at Play)
-function loadSong(chart) { game.load(chart); drum.load(chart); }
+function loadSong(chart) { game.load(chart); drum.load(chart); ring.setChart(chart); }
 function startSong() {
   if (!ac) return;
   $("results").hidden = true;
@@ -1527,7 +1553,7 @@ function startSong() {
   active = { keys: keysOn(), drums: drumsOn() };
   ended = {};
   if (active.keys) game.start(t0);
-  if (active.drums) drum.start(t0);
+  if (active.drums) { drum.start(t0); ring.start(); }
   nextBeat = -countIn;
   nextNote = nextDrum = nextAcc = 0;
   closeSetup();
@@ -1712,6 +1738,8 @@ function setInstrument(v) {
   $("highway").parentElement.classList.toggle("drums-only", v === "drums");
   $("keys-row").hidden = !keysOn();
   $("drums-box").hidden = v !== "drums";               // (Drums only: its screen's width)
+  ring.both = v === "both";
+  showScreen();                                        // (the wheel, the ring)
   $("welcome-two").hidden = v !== "both";
   if (midi) {                                          // the top selector's device: as this instrument asks
     const id = $("midiin").value, active = [...roles.values()].filter((r) => r !== "off").length;
@@ -1730,6 +1758,8 @@ for (const b of document.querySelectorAll("[data-inst]")) b.addEventListener("cl
   drum.offset = game.offset;
   game.frame();
   drum.frame();
+  ring.frame();
+  wheel.frame();
   requestAnimationFrame(loop);
 })();
 setInstrument(inst);
