@@ -1,0 +1,3 @@
+# x0x's engines (x0x.c): <id> <symbol> <a category letter per preset>
+# ids 22..25 are x0x's (fixed for good: sounds are saved by them)
+22 ENG_X0X_303 BLBBBB

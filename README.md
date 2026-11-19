@@ -94,8 +94,10 @@ the names of the file's instruments ("Finger Bass", "Alto Sax" …) to help with
 
 ### Sound, mixer and effects
 
-- **Sound** (left): a tab per part. Each tab glows while its part is sounding. Search all 329 factory presets, or
-  filter them by type and engine; ◀ ▶ step through the list.
+- **Sound** (left): a tab per part. Each tab glows while its part is sounding. Search all 357 factory presets, or
+  filter them by type and engine; ◀ ▶ step through the list. Choosing a sound plays a short C4 with it. The engines are
+  Melodee's PROPHET, FM6, CZ-1, SID and DRUM, plus **X0X 303** (x0x's TB-303 bass: accent at velocity 100+, a note
+  held into the next slides) and **ANALOG** (SLOOP's analog synth and preset bank).
 - **Mixer & FX** (top): per part **level, pan, FX send, mute and solo**, a **master volume**, and the device's shared
   **effects rack** with four slots. Each slot takes Room, Reverb, Width, Phaser, Chorus, Flanger, Pedal phaser/chorus,
   Drive (soft, hard, fold, fuzz), Crush, Formant, Tape or Spit, with Mix, Rate, Character and, for Room and Reverb,
@@ -152,6 +154,8 @@ npm run check:native                            # the sanitizer check (see Check
 | --- | --- |
 | `vendor/melodee/` | Melodee, the upstream submodule (untouched) |
 | `patches/` | changes to Melodee, applied in order at build time |
+| `engines/` | engines from other projects, a folder a source ([engines/README.md](engines/README.md)) |
+| `scripts/gen_ext_engines.py` | finds the sources in `engines/`, checks their ids and licences, writes their tables |
 | `.github/workflows/pages.yml` | publishes `web/` to GitHub Pages |
 | `emu/game_glue.c` | Melodee's browser glue (`web/emu/melodee_web.c`) plus the game's exports: held notes, presets per part, the mixer and rack, palettes, BPM, part activity |
 | `emu/native_check.c`, `.sh` | the sanitizer check of the patched firmware |
@@ -192,6 +196,22 @@ every build.
   now `P_FXSEND4`), so no other setting moves. It works like slots 1–3. The device's own rack screen and the saved
   format keep three.
 
+`patches/03-engine-slots.patch`:
+
+- **Room for engines from other projects**: engine ids 22–31 (`NENGINES` 32), filled from `engines/` by
+  `scripts/gen_ext_engines.py`, each source in its own folder ([engines/README.md](engines/README.md)). An id no source
+  takes is never offered. Two hooks: the sources' power-on (`web_boot`) and their presets' extras (`apply_preset_to`).
+
+`patches/04-fixes.patch`, two fixes to upstream Melodee, found by the sanitizer check:
+
+- **Melodee's DRUM engine**: rendering a voice, it decided which kit it plays from the track as it is now and
+  from the block's parameters as they were queued. When the kit changed in between, the two disagreed: the 909 read its
+  sound table with another kit's sound number (60, where it has 16), or a lane that does not exist was used. It now
+  decides from the block's parameters throughout, and a sound number out of range plays nothing. It shows once engines
+  are switched on parts at random; the new engines are not involved.
+- **Undoing a sound load on a MIDI-only track** (tracks 7–8 here, 5–8 on the FM-1) wrote its Prophet patch past
+  Melodee's table, which has an entry per synth part only. Only synth parts swap it now.
+
 Built alongside, without patching Melodee's source: its palettes with the track colours reversed
 (`scripts/gen_palettes.py`).
 
@@ -199,7 +219,9 @@ Built alongside, without patching Melodee's source: its palettes with the track 
 
 `npm run check:native` builds the patched firmware natively with AddressSanitizer and UndefinedBehaviorSanitizer. It
 plays all six parts, sets their mix, selects every track, presses every button and knob, puts every effect in every
-rack slot (Chain and Split), then runs 20,000 random inputs. `NATIVE_SEED=n` gives another random run. The alignment
+rack slot (Chain and Split), every preset of every engine from `engines/` on every part, then runs 20,000 random
+inputs, engines switched on parts among them. `NATIVE_SEED=n` gives another random run, `NATIVE_TRACE=1` prints each
+input. The alignment
 and shift checks are off: the host harness removes every `__attribute__`, and the DSP code shifts negative values on
 purpose, both upstream as here.
 
@@ -210,6 +232,9 @@ purpose, both upstream as here.
   what, the instruments' sounds). Link it from the game's page.
 - [ ] **A screen for the device's settings**, separate from the game. The device's own screens (GLO, the rack, …)
   are not used; its screen is the visualiser only.
+- [ ] **More sound engines** (possibly). Engines from other projects plug in as folders in `engines/` (so far x0x's 303
+  and SLOOP's ANALOG). Melodee keeps more of its own that are retired or turned off in its build (e.g. PHASE, VOICE,
+  TRIO, WHEEL, NOISE, behind `MELODEE_LEGACY_EXTRAS`).
 
 ## About this project
 
@@ -237,6 +262,12 @@ The game is GPL-3.0 because `web/melodee.wasm` and `emu/game_glue.c` are built f
 [Felucca](https://github.com/hugelton/Felucca), Leo Kuroshita, Hügelton Instruments), modified as described above. A
 public deployment must offer its corresponding source, for example by linking to this repository. The built-in songs
 are public-domain melodies.
+
+The engines in `engines/` come from [x0x](https://github.com/charlesvestal/fm1-x0x) (Charles Vestal) and
+[SLOOP](https://github.com/isod89/sloop-fm1) (isod89), both GPL-3.0 forks of Felucca. x0x's 303 contains parts of
+[Open303](https://github.com/RobinSchmidt/Open303) by Robin Schmidt under the MIT licence
+(`engines/x0x/LICENSE-MIT-Open303.txt`). Each folder's `NOTICE.md` gives the details. TB-303 is a trademark of Roland
+Corporation, used only to describe what the engine emulates.
 
 M-VAVE and FM-1 are trademarks of their respective owners; this project is not affiliated with them, Melodee or
 Hügelton Instruments.

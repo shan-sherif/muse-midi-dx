@@ -1,0 +1,91 @@
+diff -ruN --exclude=build melodee/firmware/src/browse.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/browse.c
+--- a/firmware/src/browse.c	2026-11-11 11:12:03
++++ b/firmware/src/browse.c	2026-11-18 23:07:16
+@@ -34,6 +34,7 @@
+     [ENGI_PROPHET] =                                    /* INIT, Sequential's 200 */
+         "OOOKBPROOOGKLPWPOLOUUBEOEGFPOOBOEOOODDDEOOGKSGBPEPPLBROOOOPOKPKOFOSOOEPRODFLFOOEOULWOPBOLOPKFORGLPOBULROOSKOO"
+         "PSBUEFDEEEWEUOUEOOOOSERPUOBOOOBOFLGUGRLOOOBUFOOFEUFORSKKWKLGLGGKROGBGLKSLOOFOFOFLUUEFFEOFEPF",
++    EXT_PRESET_CATS                                     /* muse-midi-dx: engines/ (engines.txt) */
+ };
+ static uint32_t cat_of_engine(uint32_t e) { return e == ENGI_DRUM ? CAT_DRUM : e == 11u ? CAT_FX : CAT_OTHER; }
+ static uint32_t preset_cat(uint32_t e, uint32_t k)           /* factory preset k of engine e */
+diff -ruN --exclude=build melodee/firmware/src/core.h /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/core.h
+--- a/firmware/src/core.h	2026-11-18 23:45:10
++++ b/firmware/src/core.h	2026-11-18 23:07:16
+@@ -82,13 +82,14 @@
+ #define USER_GENERAL 16u
+ #define USER_NATIVE_P5 20u
+ #define ENGI_MIDI 21u            /* 20 reserved for the Prophet user-preset namespace */
+-#define NENGINES 22               /* append engines without reusing preset namespaces */
++#include "ext_engines_ids.h"     /* muse-midi-dx: the engines from engines/ (scripts/gen_ext_engines.py) */
++#define NENGINES 32               /* append engines without reusing preset namespaces (muse-midi-dx: 22..31 engines/) */
+ #define USER_NATIVE_FM 17u
+ #define USER_NATIVE_CZ 18u
+ #define USER_NONE 65535u
+ #define ENGI_ANALOG 0u           /* retired in 1.2: never selectable (eng_ok), its stored sounds play silent */
+ #define ENGI_DIGITAL 1u          /* retired: never selectable (eng_ok), its stored sounds play silent */
+-#define NENG_SHOWN (6u + MELODEE_SLICE + 6u * MELODEE_LEGACY_EXTRAS)   /* the engines one can pick: PRESETS, the EDIT
++#define NENG_SHOWN (6u + MELODEE_SLICE + 6u * MELODEE_LEGACY_EXTRAS + EXT_ENGINE_COUNT)   /* the engines one can pick: PRESETS, the EDIT
+                                                 * layer, the editor, in the display order of engines.c ENGINE_ORDER */
+ #define ENGI_SLICE 13u           /* reserved without MELODEE_SLICE: never selectable (eng_ok) */
+ #ifdef SMP_USER_SLOTS
+diff -ruN --exclude=build melodee/firmware/src/engines.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/engines.c
+--- a/firmware/src/engines.c	2026-11-18 23:45:09
++++ b/firmware/src/engines.c	2026-11-18 23:07:16
+@@ -42,6 +42,9 @@
+     .knob = {P_E4, P_E5, P_E6, P_REL},
+ };
+ #endif
++/* muse-midi-dx: the engines from other projects, each source in its own folder (engines/<source>/: its code, an adapter,
++ * its licence); the ids 22..31 theirs (engines.txt). An id no source takes stays ENG_RETIRED, never offered */
++#include "ext_engines.h"
+ 
+ /* Each track owns only its selected engine's working state. Simple engines
+  * use voice_t alone. State is released after the old engine's switch fade. */
+@@ -152,6 +155,8 @@
+     &ENG_P5_TEST,                /* 19: Prophet (ANALOG's ID 0 stays reserved) */
+     &ENG_RETIRED,                /* 20: Prophet user-preset namespace */
+     &ENG_MIDI,                   /* 21: USB MIDI Track */
++    [22 ... 31] = &ENG_RETIRED,  /* muse-midi-dx: 22..31 for engines/, the ones present below */
++    EXT_ENGINE_TABLE
+ };
+ 
+ /* a track's engine number as an index (the audio paths: a compare, cheaper than % NENGINES; a bad number: 0) */
+@@ -190,6 +195,7 @@
+ #if MELODEE_SLICE
+     13,                          /* SLICE */
+ #endif
++    EXT_ENGINE_IDS               /* muse-midi-dx: engines/ */
+     10,                          /* DRUM */
+     ENGI_MIDI,
+ };
+@@ -207,6 +213,7 @@
+  * eng_vis(n), e's place among them eng_rank(e), the next / previous one eng_step(e, dir) (wraps) */
+ static int eng_ok(uint32_t e)
+ {
++    if (e >= EXT_ENGINE_FIRST && e < NENGINES) return ENGINES[e] != &ENG_RETIRED;   /* (engines/: present or not) */
+     return e < NENGINES && e != USER_NATIVE_P5 && !(e >= 16u && e <= 18u) && !eng_extra_retired(e) && e != 4u && e != 8u && e != 14u && (MELODEE_SLICE || e != ENGI_SLICE);
+ }
+ static uint32_t eng_sound_idx(uint32_t e)
+diff -ruN --exclude=build melodee/firmware/src/ui.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/ui.c
+--- a/firmware/src/ui.c	2026-11-18 23:45:10
++++ b/firmware/src/ui.c	2026-11-18 23:07:16
+@@ -1058,6 +1058,7 @@
+     t->p[P_ED_FLT] = pr->fenv;
+     t->p[P_VOICE] = pr->mono ? V_LEGATO : V_POLY;   /* mono presets keep the legato feel */
+     if(t->eng_req==ENGI_PROPHET)p5_preset_loaded(t,pi);
++    ext_preset_loaded(t, t->eng_req, pi);            /* muse-midi-dx: an engines/ preset's extras */
+     cz_factory_loaded(t);
+     cz_track_accept(t);
+     fm6_track_loaded(t);                              /* FM6: the preset's patch */
+diff -ruN --exclude=build melodee/web/emu/melodee_web.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/web/emu/melodee_web.c
+--- a/web/emu/melodee_web.c	2026-11-11 11:12:03
++++ b/web/emu/melodee_web.c	2026-11-18 23:07:16
+@@ -29,6 +29,7 @@
+ 
+ EXPORT(web_boot) void web_boot(uint32_t master)       /* main.c melodee_init, as the UI tests power on */
+ {
++    ext_engines_init();                                /* muse-midi-dx: the engines from engines/ */
+     fm6_init();
+     cz_init();
+     ui_power_on();

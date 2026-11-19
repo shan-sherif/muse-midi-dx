@@ -1,0 +1,3 @@
+# SLOOP's engines (sloop.c): <id> <symbol> <a category letter per preset>
+# ids 26..29 are SLOOP's (fixed for good: sounds are saved by them)
+26 ENG_SLOOP_ANALOG BBBBBBBBBLURLPSPWLBLBP

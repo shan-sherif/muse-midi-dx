@@ -6,5 +6,6 @@ set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 M="$ROOT/.build/melodee"
 cc -std=gnu99 -O1 -g -w -fsanitize=address,undefined -fno-sanitize=alignment,shift -fno-sanitize-recover=undefined -fno-omit-frame-pointer \
-   -I"$M/build/gen" -I"$M/firmware/src" -I"$M/tests" -I"$M/web/emu" -o "$ROOT/.build/native_check" "$ROOT/emu/native_check.c" -lm
+   -I"$M/build/gen" -I"$M/firmware/src" -I"$M/tests" -I"$M/web/emu" -I"$M/firmware/src/x0x" -o "$ROOT/.build/native_check" \
+   "$ROOT/emu/native_check.c" $(cat "$M/build/gen/ext_units.txt") -lm
 "$ROOT/.build/native_check"

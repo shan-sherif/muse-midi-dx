@@ -1,0 +1,45 @@
+diff -ruN --exclude=build melodee/firmware/src/eng_drum.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/eng_drum.c
+--- a/firmware/src/eng_drum.c	2026-11-11 11:12:03
++++ b/firmware/src/eng_drum.c	2026-11-19 11:01:37
+@@ -436,9 +436,11 @@
+         return;
+     }
+     drum_lane_t *L = drum_lane_of(t, v);
++    int p909 = p[P_E0] == DK_909;                        /* muse-midi-dx: the kit as this block's parameters have it (drum_source
++                                                          * decides by them; the track's own may have changed since) */
+     int32_t y[CTL], drv = p[P_E7], g = 0, mk = 0;
+     uint32_t i;
+-    if (!L && !drum_is909(t))
++    if (!L && !p909)
+         return;
+     if (n > CTL)
+         n = CTL;
+@@ -448,9 +450,13 @@
+         g = 4096 + drv * 3 * 4096 / 127;
+         mk = (int32_t)((19661u << 15) / (uint32_t)softclip((19661 * g) >> 12));
+     }
+-    uint32_t sound=drum_is909(t)?(uint32_t)v->s[1]:L->sound;
++    uint32_t sound=p909?(uint32_t)v->s[1]:L->sound;
++    if (sound >= sizeof drum_patch_of(t-trk)->c / sizeof drum_patch_of(t-trk)->c[0])
++        return;                                          /* muse-midi-dx: a voice's sound out of range (a 909 voice rendered
++                                                          * with another kit's or a finished voice's state): no output, no
++                                                          * read past the patch's 16 sounds */
+     const int8_t *c=drum_patch_of(t-trk)->c[sound];
+-    if(!drum_is909(t) && sound!=D9_SD && c[2])drum_color(L,c[2],y,n);
++    if(!p909 && L && sound!=D9_SD && c[2])drum_color(L,c[2],y,n);
+     int32_t lv = clamp(p[P_LN0 + ((uint32_t)v->s[0] & (DV_NLANE - 1u))], 0, 127)*(127-c[3])/127;
+     /* Fold lane gain into the block's amplitude ramp: no extra per-sample multiply. */
+     vmod_t lane_mod;
+diff -ruN --exclude=build melodee/firmware/src/ui.c /Users/shan/Documents/Dev/Music/muse-midi-dx/.build/melodee/firmware/src/ui.c
+--- a/firmware/src/ui.c	2026-11-19 00:38:20
++++ b/firmware/src/ui.c	2026-11-19 11:10:50
+@@ -964,7 +964,8 @@
+         fm6_set_patch(tr, u->fm6);
+         memcpy(u->fm6, v, FP_SIZE);
+         {drum_patch_t dp=(*drum_patch_of(tr));(*drum_patch_of(tr))=u->drum;u->drum=dp;}
+-        { p5_patch_t pp=*p5_patch_of(t);p5_patch[tr]=u->p5;u->p5=pp;p5_ready[tr]=1; }
++        if (tr < NPART) { p5_patch_t pp=*p5_patch_of(t);p5_patch[tr]=u->p5;u->p5=pp;p5_ready[tr]=1; }   /* muse-midi-dx: the synth
++                                                   * parts' patches only (a MIDI-only track's undo wrote past p5_patch[]) */
+         { cz_patch_t cp = (*cz_patch_of(tr)); (*cz_patch_of(tr)) = u->cz; u->cz = cp; cz_track_accept(t); }
+ 
+     }

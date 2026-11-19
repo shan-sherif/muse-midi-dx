@@ -32,6 +32,25 @@ __attribute__((constructor)) static void native_check(void)
         printf(" %u\n", (unsigned)({ uint32_t n = 0; for (k = 0; k < NVOICE; k++) n += trk[t].v[k].active; n; }));
     for (t = 0; t < NPART; t++) for (k = 0; k < 6u; k++) game_tparam_set(t, k, k == 1u ? -20 : 90);
     for (t = 0; t < NTRK; t++) { game_load_track(t, 3u /* SID */, 3); run_ms(30); }
+    /* the engines from engines/ (22..31): every preset on every part, notes held over each other (the 303's slide), chords */
+    {
+        uint32_t e, k, found = 0;
+        for (e = EXT_ENGINE_FIRST; e < NENGINES; e++) {
+            if (!eng_ok(e)) continue;
+            found++;
+            for (k = 0; k < ENGINES[e]->npresets; k++)
+                for (t = 0; t < NPART; t++) {
+                    game_load_track(t, e, k); run_ms(10);
+                    web_midi_in(0x90u | t, 36u + k, 120); run_ms(30);
+                    web_midi_in(0x90u | t, 43u + k, 80); web_midi_in(0x80u | t, 36u + k, 0); run_ms(30);
+                    web_midi_in(0x90u | t, 48u, 100); web_midi_in(0x90u | t, 52u, 100); run_ms(20);
+                    web_midi_in(0x80u | t, 43u + k, 0); web_midi_in(0x80u | t, 48u, 0); web_midi_in(0x80u | t, 52u, 0);
+                }
+            printf("engines/: %s (%u), %u presets on every part\n", ENGINES[e]->name, (unsigned)e, (unsigned)ENGINES[e]->npresets);
+        }
+        if (found != EXT_ENGINE_COUNT) { printf("engines/: %u offered, %u expected\n", (unsigned)found, (unsigned)EXT_ENGINE_COUNT); exit(1); }
+        run_ms(1500);
+    }
     /* the rack: every effect in every slot (4: rack4), CHAIN and SPLIT, every send up on every part; REVERB moving */
     {
         static const uint8_t FXT[] = {0, 1, 2, 3, 4, 5, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18, 19};
@@ -72,16 +91,22 @@ __attribute__((constructor)) static void native_check(void)
         for (i = 0; i < 7u; i++) { web_encoder(i, (int32_t)(i & 1u ? 3 : -2)); run_ms(20); }
         web_buttons(1u << 8); run_ms(30); web_buttons(0); run_ms(60);       /* (HOME again) */
     }
-    /* random inputs */
+    /* random inputs (NATIVE_TRACE=1: each one printed, to find the one before a failure) */
+    int trace = getenv("NATIVE_TRACE") != 0;
+#define TR(...) do { if (trace) { printf("%5u ", (unsigned)i); printf(__VA_ARGS__); putchar('\n'); fflush(stdout); } } while (0)
     for (i = 0; i < 20000u; i++) {
         uint32_t r = rnd(10);
-        if (r < 3u) { web_buttons(1u << rnd(14)); run_ms(rnd(3) ? 20 : 700); web_buttons(0); }
-        else if (r < 6u) web_encoder(rnd(7), (int32_t)rnd(9) - 4);
-        else if (r < 8u) web_keys(1u << rnd(27));
-        else if (r < 9u) web_keys(0);
-        else if (rnd(4) == 0u) { uint32_t sl = rnd(RACK_SLOTS + 1u), f = rnd(7); game_rack_set(sl, f, (int32_t)rnd(200) - 70);
-                                  game_tparam_set(rnd(NPART), 3u + rnd(4), (int32_t)rnd(140)); }
-        else { uint32_t ch = rnd(NPART + 2u); web_midi_in((rnd(4) ? 0x90u : 0x80u) | ch, 24u + rnd(80), 1u + rnd(126)); }
+        if (r < 3u) { uint32_t b = rnd(14), hold = rnd(3) ? 20 : 700; TR("button %u for %u ms (sel %u, page %u, home %u)", (unsigned)b, (unsigned)hold, (unsigned)song.sel, (unsigned)ui.page, (unsigned)ui.home);
+                      web_buttons(1u << b); run_ms(hold); web_buttons(0); }
+        else if (r < 6u) { uint32_t e = rnd(7); int32_t d = (int32_t)rnd(9) - 4; TR("knob %u %+d", (unsigned)e, (int)d); web_encoder(e, d); }
+        else if (r < 8u) { uint32_t k = rnd(27); TR("key %u", (unsigned)k); web_keys(1u << k); }
+        else if (r < 9u) { TR("keys up"); web_keys(0); }
+        else if (rnd(4) == 0u) { uint32_t sl = rnd(RACK_SLOTS + 1u), f = rnd(7); int32_t v = (int32_t)rnd(200) - 70; uint32_t tp = rnd(NPART), k = 3u + rnd(4); int32_t tv = (int32_t)rnd(140);
+                                  TR("rack slot %u field %u = %d; part %u send %u = %d", (unsigned)sl, (unsigned)f, (int)v, (unsigned)tp, (unsigned)k, (int)tv);
+                                  game_rack_set(sl, f, v); game_tparam_set(tp, k, tv); }
+        else if (rnd(40) == 0u) { uint32_t e = rnd(NENGINES), tp = rnd(NPART), k = rnd(64); if (eng_ok(e)) { TR("part %u <- engine %u preset %u", (unsigned)tp, (unsigned)e, (unsigned)k); game_load_track(tp, e, k); } }
+        else { uint32_t ch = rnd(NPART + 2u), on = rnd(4), note = 24u + rnd(80), vel = 1u + rnd(126); TR("midi ch %u %s %u vel %u", (unsigned)ch + 1u, on ? "on" : "off", (unsigned)note, (unsigned)vel);
+               web_midi_in((on ? 0x90u : 0x80u) | ch, note, vel); }
         run_ms(5 + rnd(30));
     }
     printf("random inputs done: sel %u, page %u, home %u; arena used %u of %u bytes, failures %u\n",
