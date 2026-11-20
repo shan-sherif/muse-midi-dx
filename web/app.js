@@ -15,7 +15,7 @@ const $ = (id) => document.getElementById(id);
  * project of shan-sherif.github.io), so "theme" alone could be another project's */
 const STORE_PREFIX = "muse-midi-dx:";
 const STORE_KEYS = ["theme", "sounds", "keysize", "keyshift", "transpose", "speed", "speedx", "offset", "metro", "letters",
-                    "instrument", "routes", "mix", "drumw", "outside", "matchsounds", "waves"];
+                    "instrument", "routes", "mix", "drumw", "outside", "matchsounds", "waves", "loop"];
 const store = { get(k) { try { return localStorage.getItem(STORE_PREFIX + k); } catch { return null; } },
                 set(k, v) { try { localStorage.setItem(STORE_PREFIX + k, v); } catch {} },
                 del(k) { try { localStorage.removeItem(STORE_PREFIX + k); } catch {} } };
@@ -846,6 +846,12 @@ function gameEnded(which) {
   ended[which] = true;
   if ((active.keys && !ended.keys) || (active.drums && !ended.drums)) return;
   endSchedulers();
+  if (loopOn && demoRun) {                               // Loop (CPU): round again, a bar's count-in, no results
+    loops++;
+    startSong(true);
+    ui.status(`Looping ${chartNow().title} · round ${loops + 1}`);
+    return;
+  }
   $("play").textContent = "Play";
   pushBpm(chartNow().bpm);
   const parts = [active.keys && { label: "keys", r: game.results() }, active.drums && { label: "drums", r: drum.results() }].filter(Boolean);
@@ -1440,6 +1446,7 @@ function resetAll() {
   $("metro").checked = false;                          // (off by default)
   setDrumWidth(DRUM_W_DEFAULT, false);
   setWaves(true); store.del("waves");
+  setLoop(false); store.del("loop");
   $("letters").checked = true; game.showLetters = true;
   setMode(true);
   if (midi) for (const id of roles.keys()) roles.delete(id);   // the devices: the top selector's one, as Keyboard
@@ -1475,12 +1482,25 @@ $("defaults").onclick = () => {
 let timer = null, nextBeat = 0, nextNote = 0, nextDrum = 0, nextAcc = 0, demoRun = true, cpuPlayed = false;
 let cpuHits = [];                                      // the CPU's drum hits waiting to be judged (timeouts)
 
+/* Loop (CPU only): the song, or its section, round and round until stopped; each time a bar's count-in, no results.
+ * Kept. User: off (greyed: a song you play ends in its results) */
+let loopOn = store.get("loop") === "1", loops = 0;
+function setLoop(on) {
+  loopOn = on;
+  store.set("loop", on ? "1" : "0");
+  $("loop").setAttribute("aria-pressed", on);
+}
+$("loop").onclick = () => setLoop(!loopOn);
+setLoop(loopOn);
+
 /* who plays: CPU (the default: the song plays itself) or User. Switchable mid-song: User takes over from here,
  * CPU picks up from the notes still to come */
 function setMode(cpu) {
   demoRun = cpu;
   $("mode-cpu").setAttribute("aria-checked", cpu);
   $("mode-user").setAttribute("aria-checked", !cpu);
+  $("loop").disabled = !cpu;
+  $("loop").title = cpu ? "Loop: the CPU plays the song (or its section) round and round, until you stop it" : "Loop is for CPU play (switch to CPU)";
   if (!playing()) return;
   if (cpu) {
     cpuPlayed = true;
@@ -1546,11 +1566,13 @@ function endSchedulers() {
 }
 let songChart = null;                                  // (what is playing: chartNow() at Play)
 function loadSong(chart) { game.load(chart); drum.load(chart); ring.setChart(chart); }
-function startSong() {
+function startSong(again = false) {
   if (!ac) return;
+  if (!again) loops = 0;
   $("results").hidden = true;
   const chart = (songChart = chartNow()), spb = beatAt(chart, 1) - beatAt(chart, 0), bar = chart.beatsPerBar || 4;
-  const countIn = Math.ceil(Math.max(3, bar * spb) / spb);          // whole beats at the opening tempo: 3 s or a bar
+  // whole beats at the opening tempo: 3 s or a bar (round again, Loop: a bar)
+  const countIn = again ? bar : Math.ceil(Math.max(3, bar * spb) / spb);
   cpuPlayed = demoRun;
   sentBpm = 0;
   pushBpm(chart.bpm);

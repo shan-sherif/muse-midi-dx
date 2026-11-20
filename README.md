@@ -88,6 +88,8 @@ shows all fourteen.
   original stays shown beside it, and **Reset** puts it back. Everything follows: the notes, the band, the metronome
   and the device's BPM; pitch stays the same. Kept per song until the page is reloaded.
 - **CPU / User:** CPU (the default) plays your part for you; User leaves it to you. You can switch mid-song.
+- **Loop** (under CPU / User, CPU only): the song, or its section from Setup, plays round and round, each time after a
+  bar's count-in, with no results in between, until you press **Stop** (or `Esc`). Off by default, kept.
 
 ### The Piano box
 
@@ -166,8 +168,8 @@ title.
 - **Theme** (top): the device screen's palette. The whole page takes its colours from it: NIGHT, DAY, CONTRAST,
   SUNSET, OCEAN, NEON, CANDY or **LO-FI** (default). Changing it on the device does the same.
 - **Kept in this browser:** the theme, every part's sound, the mix and effects, the instrument (Keyboard, Drums,
-  Both), MIDI routing, keys, octave, Outside, speed, offset, metronome, key letters, the drum screen's width, Waves and
-  Match sounds.
+  Both), MIDI routing, keys, octave, Outside, speed, offset, metronome, key letters, the drum screen's width, Waves,
+  Match sounds and Loop.
   Songs and their setup are kept until the page is reloaded.
 - **Defaults** (top, click twice): puts all of it back.
 - **⛶:** full screen.

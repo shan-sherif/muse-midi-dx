@@ -426,3 +426,9 @@ button.big { font-size: 16px; padding: 10px 26px; border-radius: 10px; }
 }
 /* ---- the page's screens over the device's, the same size: the rhythm ring (Drums, Both), the chord wheel (Keyboard) */
 #ring, #wheel { position: absolute; inset: 9px; width: calc(100% - 18px); height: calc(100% - 18px); border-radius: 8px; display: block; }
+/* ---- Loop (CPU only): under CPU / User */
+.loop-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; padding: 4px 10px;
+            border-radius: 8px; background: transparent; border: 1px solid var(--line); color: var(--dim); }
+.loop-btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.loop-btn[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.loop-btn:disabled { opacity: .4; cursor: default; }
